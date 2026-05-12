@@ -1,0 +1,8 @@
+# Compiled binaries
+*.exe
+*.out
+*.o
+
+# Runtime data files (never commit credentials or user data)
+users.txt
+*_tasks.txt
