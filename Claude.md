@@ -2,6 +2,14 @@
 
 ---
 
+## Git Workflow Rules
+
+- **DO NOT run `git commit` automatically under any circumstances.**
+- When you finish writing or fixing code, you are only allowed to run `git status` and `git add .` to stage the changes.
+- After staging, STOP and tell me exactly what you changed. I will manually run the `git commit` command myself.
+
+---
+
 ## Permanent Development Standard
 
 > **ENGLISH ONLY — This rule applies for the remainder of the project without exception.**
@@ -88,25 +96,63 @@ queue, and supports a one-level undo via a stack.
 
 ---
 
-### Phase 3 — Dashboard & Priority Queue
-1. Priority Queue implemented as a sorted linked list (High=1 < Medium=2 < Low=3)
-2. `pq_enqueue()` inserts in sorted order; `pq_dequeue()` removes the front node
-3. Dashboard Zone 1: topological sort → push in-degree-0 tasks into the queue →
-   display in priority order
-4. Dashboard Zone 2: display all tasks still blocked (in-degree > 0)
-5. `markDone(taskID)`: set status DONE, remove outgoing edges, decrement in-degrees,
-   push action to undo stack, refresh dashboard
+### Phase 3 — Priority Queue & Mark Done
+1. Define `PQNode` struct (taskID, priority, \*next) and `PriorityQueue` struct (head pointer)
+   in `priority_queue.h`
+2. Implement in `priority_queue.c`:
+   - `pq_enqueue()` — sorted insert (walk to first node with higher priority number, insert before it)
+   - `pq_dequeue()` — remove and return head's taskID; return -1 if empty
+   - `pq_isEmpty()` — return 1 if head == NULL
+   - `pq_free()` — walk and free all nodes
+3. Update `displayDashboard()` in `task_graph.c`:
+   - Remove the old static `sortByPriority()` insertion-sort helper
+   - Replace it with a local `PriorityQueue`: enqueue every in-degree-0 PENDING task,
+     then dequeue one-by-one to display Zone 1 in correct priority order
+   - `#include "priority_queue.h"` must be added at the top of `task_graph.c`
+4. Add `markDone(taskID)` in `task_graph.c`:
+   - Find the task; return -1 if not found, 0 if already DONE
+   - Set `task->status = STATUS_DONE`
+   - Walk `adjList[taskID]` and decrement `inDegree[successor]` for each neighbour
+   - **Do NOT remove edges from the adjacency list** — Phase 4 Undo needs them to
+     re-increment inDegrees when reverting
+5. **⚠️ Critical fix — `loadTasksFromFile()` in `task_graph.c`:**
+   When the file is reloaded, `DEP` lines rebuild `inDegree` from ALL edges — including
+   edges whose source task is already DONE. Without a fix-up, tasks that were correctly
+   unlocked by `markDone()` will appear wrongly blocked again after the next login.
+   **After the full file is parsed, add a fix-up pass:**
+   ```
+   for every task in the list:
+       if task->status == STATUS_DONE:
+           for every neighbour in adjList[task->taskID]:
+               if inDegree[neighbour] > 0: inDegree[neighbour]--
+   ```
+6. Wire up menu option `[4]` in `main.c`: show PENDING tasks → prompt Task ID (validate
+   non-empty) → call `markDone()` → save → show refreshed dashboard
+7. Leave a `/* TODO Phase 4: stack_push(taskID) */` comment at the success point inside
+   case 4 of `mainMenu()` so the Phase 4 team knows the exact line to add the push call
 
 ---
 
 ### Phase 4 — Undo Stack & Final Integration
-1. Stack implemented as a singly linked list: `stack_push()`, `stack_pop()`,
-   `stack_peek()`, `stack_isEmpty()`
-2. On `markDone`: push the completed task ID onto the stack
-3. On Undo: pop task ID, revert its status to PENDING, restore graph edges,
-   recalculate in-degrees, refresh dashboard
-4. Full integration test: register → login → add tasks → set dependencies →
-   view dashboard → mark done → undo → verify persistence after restart
+1. Define `StackNode` struct (taskID, \*next) and `UndoStack` struct (top pointer)
+   in `stack_undo.h`
+2. Implement in `stack_undo.c`:
+   - `stack_push()` — malloc new node, set top
+   - `stack_pop()` — save top's taskID, advance top, free old node, return taskID
+   - `stack_peek()` — return top->taskID without removing; -1 if empty
+   - `stack_isEmpty()` — return 1 if top == NULL
+   - `stack_free()` — pop all remaining nodes (call on logout/exit)
+3. In `main.c` case 4: replace the `/* TODO Phase 4: stack_push(taskID) */` comment
+   with the actual `stack_push(&undoStack, taskID)` call
+4. Wire up menu option `[5]` in `main.c`:
+   - Call `stack_pop()` to get last completed taskID
+   - Revert: set `task->status = STATUS_PENDING`
+   - Re-increment `inDegree[successor]` for every neighbour in `adjList[taskID]`
+     (the edges were never removed, so this is a simple walk)
+   - Save and refresh dashboard
+5. Full integration test: register → login → add tasks → set dependencies →
+   mark done → verify dashboard updates → undo → verify task returns to Zone 1 →
+   logout and back in → verify state persists correctly
 
 ---
 
@@ -118,3 +164,7 @@ queue, and supports a one-level undo via a stack.
 - **Max users**: 100 (`MAX_USERS` compile-time constant in `auth.h`)
 - **Priority encoding**: High = 1, Medium = 2, Low = 3 (lower number = higher priority)
 - **Cycle detection**: DFS runs before every `addDependency` call to prevent circular deps
+- **inDegree tracking**: `graph->inDegree[i]` must always reflect only PENDING predecessors.
+  `markDone()` decrements it live. `loadTasksFromFile()` rebuilds it from raw `DEP` lines
+  and then must run a fix-up pass to subtract DONE tasks' contributions — otherwise
+  previously-unlocked tasks appear blocked again after every login.

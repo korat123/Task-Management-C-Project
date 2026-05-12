@@ -93,6 +93,7 @@ int authMenu(User users[], int *userCount, char *loggedInUser) {
 
         fgets(menuInput, sizeof(menuInput), stdin);
         menuInput[strcspn(menuInput, "\n")] = '\0';
+        if (strlen(menuInput) == 0) continue; /* Bare Enter — redraw menu */
         choice = atoi(menuInput);
 
         switch (choice) {
@@ -165,6 +166,7 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
 
         fgets(menuInput, sizeof(menuInput), stdin);
         menuInput[strcspn(menuInput, "\n")] = '\0';
+        if (strlen(menuInput) == 0) continue; /* Bare Enter — redraw menu */
         choice = atoi(menuInput);
 
         switch (choice) {
@@ -277,10 +279,24 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
 
                 printf(" Task A (prerequisite) ID : ");
                 fgets(menuInput, sizeof(menuInput), stdin);
+                menuInput[strcspn(menuInput, "\n")] = '\0';
+                if (strlen(menuInput) == 0) {
+                    printf("\n[ERROR] Task ID cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
                 fromID = atoi(menuInput);
 
                 printf(" Task B (dependent)    ID : ");
                 fgets(menuInput, sizeof(menuInput), stdin);
+                menuInput[strcspn(menuInput, "\n")] = '\0';
+                if (strlen(menuInput) == 0) {
+                    printf("\n[ERROR] Task ID cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
                 toID = atoi(menuInput);
 
                 result = addDependency(graph, *taskList, fromID, toID);
