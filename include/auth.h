@@ -20,7 +20,7 @@
 #define MAX_USERNAME  50            /* Max username length, including null terminator  */
 #define MAX_PASSWORD  50            /* Max password length, including null terminator  */
 #define MAX_USERS     100           /* Hard cap on the total number of registered users */
-#define USERS_FILE    "users.txt"   /* Flat-file database for persisted credentials    */
+#define USERS_FILE    "data/users.txt" /* Flat-file database for persisted credentials */
 
 /* ── Data Structures ─────────────────────────────────────────────────────── */
 

@@ -10,17 +10,19 @@ Any teammate can clone the repo and be running the project in one command:
 
 ```bash
 # Compile (run from the project root folder)
-gcc -Wall -o task_mgmt main.c auth.c task_graph.c queue.c priority_queue.c stack_undo.c
+gcc -Wall -Wextra -I include -o task_manager \
+    src/main.c src/auth.c src/task_graph.c \
+    src/priority_queue.c src/stack_undo.c src/queue.c
 
 # Run on Windows
-task_mgmt.exe
+task_manager.exe
 
 # Run on Linux / macOS
-./task_mgmt
+./task_manager
 ```
 
-> All four modules are now wired in. If you get a linker error, double-check that every
-> `.c` file above is included on the compile line.
+> All six `.c` files must be on the compile line. The `-I include` flag lets the compiler
+> find all headers in the `include/` folder without changing any `#include` directives.
 
 ---
 
@@ -69,6 +71,8 @@ bottom after each phase or bugfix is completed.
 | 2026-05-14 | Phase 4 | `task_graph.c` — added `undoMarkDone()`: DONE → PENDING + re-increment successors' `inDegree` |
 | 2026-05-14 | Phase 4 | `main.c` — wired menu option [5] Undo Last Action; in-memory undo stack lives in `mainMenu`, freed on logout; delete-then-undo handled gracefully |
 | 2026-05-14 | Bugfix  | `addDependency` — skip `inDegree[toID]++` (and matching rollback) when source is already DONE; DONE tasks are not PENDING predecessors |
+| 2026-05-14 | Refactor | All runtime data files moved into `data/` subfolder; `_mkdir("data")` call added to `main()` startup; `USERS_FILE` and task filename `snprintf` updated to use `data/` prefix |
+| 2026-05-14 | Refactor | Project reorganized: `.c` files → `src/`, `.h` files → `include/`, docs → `docs/`; `CLAUDE.md` build command updated with `-I include` and `src/` paths |
 
 ---
 
@@ -89,16 +93,17 @@ Quick reference — who owns what, and which phase it belongs to.
 
 | File(s) | Phase | Responsibility |
 |---------|-------|---------------|
-| `main.c` | 1 – 4 | UI controller: all menus, input handling, session lifecycle |
-| `auth.h` / `auth.c` | 1 | User registration, login, `users.txt` read/write |
-| `task_graph.h` / `task_graph.c` | 2 | Task linked list, directed dependency graph, DFS, dashboard, delete, search, topo sort, file I/O |
-| `queue.h` / `queue.c` | 2 | FIFO Queue (linked list); used by Kahn's BFS topological sort |
-| `priority_queue.h` / `priority_queue.c` | 3 | Sorted linked-list priority queue for ranking ready tasks |
-| `stack_undo.h` / `stack_undo.c` | 4 | LIFO stack that stores completed task IDs for Undo |
-| `README.md` | — | Project specification and technical constraints (do not edit) |
-| `Claude.md` | — | AI execution plan and permanent development standards |
-| `Work_Progress.md` | — | **This file** — team timeline and status tracker |
-| `.gitignore` | — | Excludes `*.exe`, `*.o`, `users.txt`, `*_tasks.txt` from git |
+| `src/main.c` | 1 – 4 | UI controller: all menus, input handling, session lifecycle |
+| `include/auth.h` / `src/auth.c` | 1 | User registration, login, `data/users.txt` read/write |
+| `include/task_graph.h` / `src/task_graph.c` | 2 | Task linked list, directed dependency graph, DFS, dashboard, delete, search, topo sort, file I/O |
+| `include/queue.h` / `src/queue.c` | 2 | FIFO Queue (linked list); used by Kahn's BFS topological sort |
+| `include/priority_queue.h` / `src/priority_queue.c` | 3 | Sorted linked-list priority queue for ranking ready tasks |
+| `include/stack_undo.h` / `src/stack_undo.c` | 4 | LIFO stack that stores completed task IDs for Undo |
+| `README.md` | — | Project specification and technical constraints |
+| `CLAUDE.md` | — | AI execution plan and permanent development standards |
+| `docs/Work_Progress.md` | — | **This file** — team timeline and status tracker |
+| `data/` | — | Runtime data files (`users.txt`, `<user>_tasks.txt`) — auto-created at startup |
+| `.gitignore` | — | Excludes `*.exe`, `*.o`, and `data/` contents from git |
 
 ---
 
@@ -106,7 +111,7 @@ Quick reference — who owns what, and which phase it belongs to.
 
 Teammates can run the program today and test all of these:
 
-- **Register** a new account — credentials saved to `users.txt`
+- **Register** a new account — credentials saved to `data/users.txt`
 - **Login** with username and password — incorrect credentials are rejected
 - **Add tasks** with a name and priority (High / Medium / Low) — auto-assigns an ID
 - **Set dependencies** between tasks — e.g., "Task #1 must be done before Task #2"

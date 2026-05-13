@@ -2,7 +2,9 @@
 *.exe
 *.out
 *.o
+*.pdf
 
 # Runtime data files (never commit credentials or user data)
 users.txt
 *_tasks.txt
+*pdf_content.txt

@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+  #include <direct.h>   /* _mkdir */
+#else
+  #include <sys/stat.h> /* mkdir  */
+#endif
 #include "auth.h"
 #include "task_graph.h"
 #include "stack_undo.h"
@@ -556,6 +561,13 @@ int main(void) {
     int       authResult;
     Task     *taskList = NULL;
     TaskGraph graph;
+
+    /* Create the data directory if it does not exist yet. */
+#ifdef _WIN32
+    _mkdir("data");
+#else
+    mkdir("data", 0755);
+#endif
 
     /* Initialise the graph struct before any graph operations are called. */
     initGraph(&graph);

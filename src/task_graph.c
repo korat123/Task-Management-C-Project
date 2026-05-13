@@ -537,7 +537,7 @@ void saveTasksToFile(Task *head, TaskGraph *graph, const char *username) {
     AdjNode *adj;
     int      i;
 
-    snprintf(filename, sizeof(filename), "%s_tasks.txt", username);
+    snprintf(filename, sizeof(filename), "data/%s_tasks.txt", username);
 
     file = fopen(filename, "w");
     if (file == NULL) {
@@ -599,7 +599,7 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
     int   id, pri, sta, fromID, toID, nextID;
     char  name[MAX_TASK_NAME];
 
-    snprintf(filename, sizeof(filename), "%s_tasks.txt", username);
+    snprintf(filename, sizeof(filename), "data/%s_tasks.txt", username);
 
     file = fopen(filename, "r");
     if (file == NULL)

@@ -43,16 +43,36 @@ queue, and supports a one-level undo via a stack.
 
 ---
 
+## Project Directory Layout
+
+```
+Task-Management-C-Project/
+  src/          ← all .c implementation files
+  include/      ← all .h header files
+  docs/         ← Work_Progress.md, PDF, pdf_content.txt
+  data/         ← runtime data files (users.txt, <user>_tasks.txt)
+  README.md
+  CLAUDE.md
+```
+
+## Build Command
+
+```bash
+gcc -Wall -Wextra -I include -o task_manager \
+    src/main.c src/auth.c src/task_graph.c \
+    src/priority_queue.c src/stack_undo.c src/queue.c
+```
+
 ## Module Summary
 
 | Module | Files | Core Data Structure | Phase |
 |---|---|---|---|
-| Cross-Platform UI + Main Menu | `main.c` | — | 1 |
-| User Authentication | `auth.h`, `auth.c` | Array of structs + File I/O | 1 |
-| Task Storage & Dependency Graph | `task_graph.h`, `task_graph.c` | Singly Linked List + Adjacency List | 2 |
-| Auto-Scheduler (Topological Sort) | `task_graph.h`, `task_graph.c` | Kahn's Algorithm (BFS + in-degree array) | 2 |
-| Priority Queue (Ready Tasks) | `priority_queue.h`, `priority_queue.c` | Sorted Linked List or Min-Heap | 3 |
-| Undo Stack | `stack_undo.h`, `stack_undo.c` | Stack via Linked List | 4 |
+| Cross-Platform UI + Main Menu | `src/main.c` | — | 1 |
+| User Authentication | `include/auth.h`, `src/auth.c` | Array of structs + File I/O | 1 |
+| Task Storage & Dependency Graph | `include/task_graph.h`, `src/task_graph.c` | Singly Linked List + Adjacency List | 2 |
+| Auto-Scheduler (Topological Sort) | `include/task_graph.h`, `src/task_graph.c` | Kahn's Algorithm (BFS + in-degree array) | 2 |
+| Priority Queue (Ready Tasks) | `include/priority_queue.h`, `src/priority_queue.c` | Sorted Linked List or Min-Heap | 3 |
+| Undo Stack | `include/stack_undo.h`, `src/stack_undo.c` | Stack via Linked List | 4 |
 
 ---
 
