@@ -1,6 +1,6 @@
 # Work Progress — Smart Task Management System
 
-**Project:** Smart Task Management System &nbsp;|&nbsp; **Phases Done:** 2 / 4 &nbsp;|&nbsp; **Last Updated:** 2026-05-14
+**Project:** Smart Task Management System &nbsp;|&nbsp; **Phases Done:** 4 / 4 &nbsp;|&nbsp; **Last Updated:** 2026-05-14
 
 ---
 
@@ -10,7 +10,7 @@ Any teammate can clone the repo and be running the project in one command:
 
 ```bash
 # Compile (run from the project root folder)
-gcc -Wall -o task_mgmt main.c auth.c task_graph.c queue.c
+gcc -Wall -o task_mgmt main.c auth.c task_graph.c queue.c priority_queue.c stack_undo.c
 
 # Run on Windows
 task_mgmt.exe
@@ -19,9 +19,8 @@ task_mgmt.exe
 ./task_mgmt
 ```
 
-> **Note:** `priority_queue.c` and `stack_undo.c` are not included yet — they are stubs
-> that Phase 3 and Phase 4 will complete. When ready, update the compile command to:
-> `gcc -Wall -o task_mgmt main.c auth.c task_graph.c queue.c priority_queue.c stack_undo.c`
+> All four modules are now wired in. If you get a linker error, double-check that every
+> `.c` file above is included on the compile line.
 
 ---
 
@@ -61,6 +60,15 @@ bottom after each phase or bugfix is completed.
 | 2026-05-14 | Feature | `task_graph.c` — `searchTaskByName()`: case-insensitive substring search |
 | 2026-05-14 | Feature | `task_graph.c` — `topologicalSortDisplay()`: Kahn's BFS algorithm using Queue |
 | 2026-05-14 | Feature | `main.c` — wired menu options [6] Delete, [7] Search, [8] Topological Order |
+| 2026-05-14 | Phase 3 | `priority_queue.h` / `priority_queue.c` — sorted linked-list PQ: `pq_init`, `pq_enqueue` (stable), `pq_dequeue`, `pq_isEmpty`, `pq_free` |
+| 2026-05-14 | Phase 3 | `task_graph.c` — replaced `sortByPriority` insertion sort in `displayDashboard` Zone 1 with PriorityQueue enqueue/dequeue |
+| 2026-05-14 | Phase 3 | `task_graph.c` — added `markDone()`: PENDING → DONE + decrement successors' `inDegree`; edges left intact for Undo |
+| 2026-05-14 | Phase 3 | `task_graph.c` — `loadTasksFromFile` fix-up pass: subtract DONE tasks' edge contributions so previously-unlocked tasks no longer re-block on reload |
+| 2026-05-14 | Phase 3 | `main.c` — wired menu option [4] Mark Task as Done (pre-check, list pending, prompt, refresh dashboard) |
+| 2026-05-14 | Phase 4 | `stack_undo.h` / `stack_undo.c` — LIFO undo stack: `stack_init`, `stack_push`, `stack_pop`, `stack_peek`, `stack_isEmpty`, `stack_free` |
+| 2026-05-14 | Phase 4 | `task_graph.c` — added `undoMarkDone()`: DONE → PENDING + re-increment successors' `inDegree` |
+| 2026-05-14 | Phase 4 | `main.c` — wired menu option [5] Undo Last Action; in-memory undo stack lives in `mainMenu`, freed on logout; delete-then-undo handled gracefully |
+| 2026-05-14 | Bugfix  | `addDependency` — skip `inDegree[toID]++` (and matching rollback) when source is already DONE; DONE tasks are not PENDING predecessors |
 
 ---
 
@@ -70,8 +78,8 @@ bottom after each phase or bugfix is completed.
 |-------|------|-----------------|--------|
 | 1 | Foundation & Authentication | `clearScreen`, `authMenu`, `registerUser`, `loginUser`, `users.txt` persistence | ✅ Done |
 | 2 | Task & Dependency Graph | Task linked list, adjacency list graph, DFS cycle check, auto-schedule dashboard, `<user>_tasks.txt` | ✅ Done |
-| 3 | Priority Queue & Mark Done | `PriorityQueue` struct, `pq_enqueue`/`pq_dequeue`, `markDone()`, Zone 1 sorted by queue | ⏳ Next |
-| 4 | Undo Stack & Full Integration | `UndoStack` struct, `stack_push`/`stack_pop`, Undo reverts last Done, end-to-end test | ⏳ Planned |
+| 3 | Priority Queue & Mark Done | `PriorityQueue` struct, `pq_enqueue`/`pq_dequeue`, `markDone()`, Zone 1 sorted by queue | ✅ Done |
+| 4 | Undo Stack & Full Integration | `UndoStack` struct, `stack_push`/`stack_pop`, Undo reverts last Done, end-to-end test | ✅ Done |
 
 ---
 
@@ -107,20 +115,17 @@ Teammates can run the program today and test all of these:
 - **Delete Task** `[6]` — removes a task and automatically repairs inDegrees for its successors
 - **Search Task** `[7]` — case-insensitive substring search on task names, displays all matches
 - **Topological Execution Order** `[8]` — Kahn's BFS algorithm shows the correct completion sequence
-- **Data persistence** — tasks and dependencies survive logout and program restart
+- **Mark Task as Done** `[4]` — flips a PENDING task to DONE, decrements successors' in-degree, and unlocks newly ready tasks live in the dashboard
+- **Undo Last Action** `[5]` — pops the most recent completion off the in-memory undo stack and reverts it to PENDING (in-session only; resets on logout)
+- **Priority Queue** powers Dashboard Zone 1 — High before Medium before Low, with stable insertion order within a priority class
+- **Data persistence** — tasks and dependencies survive logout and program restart, including the fix-up pass that prevents DONE tasks from wrongly re-blocking successors on reload
 
 ---
 
 ## What Is Not Yet Implemented
 
-These menu options still show a "coming soon" message and will be built in Phases 3–4:
-
-| Menu Option | Feature | Phase |
-|-------------|---------|-------|
-| `[4] Mark Task as Done` | Changes a task to DONE, updates the graph, unlocks dependent tasks | Phase 3 |
-| `[5] Undo Last Action` | Reverts the most recent Mark-as-Done | Phase 4 |
-
-The Priority Queue in `priority_queue.c` is also a stub. Zone 1 of the dashboard currently uses a simple insertion sort as a placeholder — Phase 3 will replace this with the proper priority queue.
+All four phases are complete. The Phase 3 and Phase 4 implementation checklists below
+are kept as a historical reference for how the modules were built.
 
 ---
 

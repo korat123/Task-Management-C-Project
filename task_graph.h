@@ -168,6 +168,29 @@ int   loadTasksFromFile(Task **head, TaskGraph *graph, const char *username);
 int  deleteTask(Task **head, TaskGraph *graph, int taskID);
 
 /*
+ * markDone  —  Marks a PENDING task as DONE and decrements successors'
+ * in-degrees so that newly unblocked tasks become ready. Dependency edges
+ * are left in place so undoMarkDone can re-increment without rebuilding.
+ *
+ * Return codes:
+ *   1  — Task marked Done successfully.
+ *   0  — Task is already Done; no change made.
+ *  -1  — Task not found.
+ */
+int  markDone(Task *head, TaskGraph *graph, int taskID);
+
+/*
+ * undoMarkDone  —  Reverts a DONE task back to PENDING and re-increments
+ * its successors' in-degrees. Used by the Undo Stack (Phase 4).
+ *
+ * Return codes:
+ *   1  — Task reverted to Pending successfully.
+ *   0  — Task is already Pending; no change made.
+ *  -1  — Task not found (e.g. it was deleted after being marked Done).
+ */
+int  undoMarkDone(Task *head, TaskGraph *graph, int taskID);
+
+/*
  * searchTaskByName  —  Case-insensitive substring search on task names.
  * Prints a formatted table of matching tasks to stdout.
  * Returns the number of matching tasks found (0 if none).
