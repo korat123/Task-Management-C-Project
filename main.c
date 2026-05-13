@@ -3,6 +3,7 @@
 #include <string.h>
 #include "auth.h"
 #include "task_graph.h"
+#include "stack_undo.h"
 
 /*
  * main.c  —  Program entry point, terminal UI, and top-level menu controller.
@@ -16,10 +17,11 @@
  *
  * Architecture:
  *   This file owns UI and control flow only.
- *   Auth logic  → auth.c
- *   Task/graph  → task_graph.c   (Phase 2, this file)
- *   Queue       → priority_queue.c  (Phase 3)
- *   Undo stack  → stack_undo.c      (Phase 4)
+ *   Auth logic     → auth.c
+ *   Task / graph   → task_graph.c
+ *   FIFO queue     → queue.c           (used by Kahn's BFS)
+ *   Priority queue → priority_queue.c  (used by Dashboard Zone 1)
+ *   Undo stack     → stack_undo.c      (one-level Undo for Mark Done)
  */
 
 
@@ -139,15 +141,20 @@ int authMenu(User users[], int *userCount, char *loggedInUser) {
  * Return Value: None (returns to the authMenu loop in main() on logout).
  * ───────────────────────────────────────────────────────────────────────── */
 void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
-    char menuInput[16];
-    char nameBuffer[MAX_TASK_NAME];
-    int  choice;
-    int  priorityChoice;
-    int  fromID;
-    int  toID;
-    int  result;
-    Task *task;
-    /* nameBuffer is reused for keyword input in Search (case 7). */
+    char      menuInput[16];
+    char      nameBuffer[MAX_TASK_NAME];
+    int       choice;
+    int       priorityChoice;
+    int       fromID;
+    int       toID;
+    int       result;
+    Task     *task;
+    UndoStack undoStack;
+    /* nameBuffer is reused for keyword input in Search (case 7).
+     * undoStack lives for the duration of this session only; it is
+     * freed in case 0 (logout) and is not persisted across logins. */
+
+    stack_init(&undoStack);
 
     while (1) {
         clearScreen();
@@ -159,8 +166,8 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
         printf("  [1]  View Auto-Schedule Dashboard\n");
         printf("  [2]  Add New Task\n");
         printf("  [3]  Set Task Dependency\n");
-        printf("  [4]  Mark Task as Done               (Phase 3)\n");
-        printf("  [5]  Undo Last Action                (Phase 4)\n");
+        printf("  [4]  Mark Task as Done\n");
+        printf("  [5]  Undo Last Action\n");
         printf("  [6]  Delete Task\n");
         printf("  [7]  Search Task by Name\n");
         printf("  [8]  View Topological Execution Order\n");
@@ -178,6 +185,7 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
             /* ── [0] Logout ─────────────────────────────────────────────── */
             case 0:
                 saveTasksToFile(*taskList, graph, username);
+                stack_free(&undoStack);  /* In-memory undo history ends here. */
                 printf("\n[SYSTEM] Data saved. Goodbye, %s!\n", username);
                 printf("Press Enter to continue...");
                 fgets(menuInput, sizeof(menuInput), stdin);
@@ -336,19 +344,101 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
 
-            /* ── [4] Phase 3 stub ────────────────────────────────────────  */
-            case 4:
-                printf("\n[SYSTEM] 'Mark Task as Done' will be available in Phase 3.\n");
-                printf("Press Enter to continue...");
-                fgets(menuInput, sizeof(menuInput), stdin);
-                break;
+            /* ── [4] Mark Task as Done ───────────────────────────────────  */
+            case 4: {
+                int pendingCount = 0;
+                int targetID;
 
-            /* ── [5] Phase 4 stub ────────────────────────────────────────  */
-            case 5:
-                printf("\n[SYSTEM] 'Undo Last Action' will be available in Phase 4.\n");
-                printf("Press Enter to continue...");
+                clearScreen();
+                printBanner();
+                printf(" --- Mark Task as Done ---\n\n");
+
+                /* Pre-check: count PENDING tasks. */
+                for (task = *taskList; task != NULL; task = task->next) {
+                    if (task->status == STATUS_PENDING) pendingCount++;
+                }
+                if (pendingCount == 0) {
+                    printf("[INFO] There are no pending tasks to mark as done.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                /* List PENDING tasks so the user can pick one. */
+                printf(" Pending Tasks:\n");
+                printf("  %-4s  %-26s  %-8s\n",
+                       "ID", "Task Name", "Priority");
+                printf("  %-4s  %-26s  %-8s\n",
+                       "----", "--------------------------", "--------");
+                for (task = *taskList; task != NULL; task = task->next) {
+                    if (task->status == STATUS_PENDING) {
+                        printf("  %-4d  %-26.26s  %-8s\n",
+                               task->taskID, task->name,
+                               priorityToString(task->priority));
+                    }
+                }
+
+                printf("\n Task ID to mark as done: ");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                menuInput[strcspn(menuInput, "\n")] = '\0';
+                if (strlen(menuInput) == 0) {
+                    printf("\n[ERROR] Task ID cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+                targetID = atoi(menuInput);
+
+                result = markDone(*taskList, graph, targetID);
+                if (result == -1) {
+                    printf("\n[ERROR] Task #%d not found.\n", targetID);
+                } else if (result == 0) {
+                    printf("\n[INFO] Task #%d is already marked as Done.\n",
+                           targetID);
+                } else {
+                    saveTasksToFile(*taskList, graph, username);
+                    stack_push(&undoStack, targetID);
+                    printf("\n[SUCCESS] Task #%d marked as Done.\n", targetID);
+                    displayDashboard(*taskList, graph);
+                }
+                printf("\nPress Enter to continue...");
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
+            }
+
+            /* ── [5] Undo Last Action ────────────────────────────────────  */
+            case 5: {
+                int lastID;
+                int undoResult;
+
+                clearScreen();
+                printBanner();
+                printf(" --- Undo Last Action ---\n\n");
+
+                if (stack_isEmpty(&undoStack)) {
+                    printf("[INFO] Nothing to undo in this session.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                lastID     = stack_pop(&undoStack);
+                undoResult = undoMarkDone(*taskList, graph, lastID);
+
+                if (undoResult == -1) {
+                    printf("[INFO] Task #%d was deleted; nothing to undo.\n",
+                           lastID);
+                } else if (undoResult == 0) {
+                    printf("[INFO] Task #%d is already pending.\n", lastID);
+                } else {
+                    saveTasksToFile(*taskList, graph, username);
+                    printf("[SUCCESS] Task #%d reverted to Pending.\n", lastID);
+                    displayDashboard(*taskList, graph);
+                }
+                printf("\nPress Enter to continue...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+            }
 
             /* ── [6] Delete Task ──────────────────────────────────────────  */
             case 6:

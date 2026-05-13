@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include "task_graph.h"
 #include "queue.h"
+#include "priority_queue.h"
 
 /*
  * task_graph.c  —  Implementation of the Task & Dependency Graph module.
@@ -330,10 +331,13 @@ int detectCycle(TaskGraph *graph, Task *head) {
 int addDependency(TaskGraph *graph, Task *head, int fromID, int toID) {
     AdjNode *existing;
     AdjNode *newNode;
+    Task    *fromTask;
+    int      contributesInDegree;
 
     /* Validate that both tasks exist in the list. */
-    if (findTaskByID(head, fromID) == NULL) return -1;
-    if (findTaskByID(head, toID)   == NULL) return -2;
+    fromTask = findTaskByID(head, fromID);
+    if (fromTask == NULL)                    return -1;
+    if (findTaskByID(head, toID) == NULL)    return -2;
 
     /* A task cannot be its own prerequisite. */
     if (fromID == toID) return -3;
@@ -349,17 +353,20 @@ int addDependency(TaskGraph *graph, Task *head, int fromID, int toID) {
     newNode = (AdjNode *)malloc(sizeof(AdjNode));
     if (newNode == NULL) return -5;
 
-    /* Tentatively insert the edge (prepend for O(1) insertion). */
-    newNode->taskID        = toID;
-    newNode->next          = graph->adjList[fromID];
-    graph->adjList[fromID] = newNode;
-    graph->inDegree[toID]++;
+    /* Tentatively insert the edge (prepend for O(1) insertion). The
+     * inDegree invariant counts only PENDING predecessors, so a DONE
+     * source contributes nothing — skip the increment in that case. */
+    newNode->taskID         = toID;
+    newNode->next           = graph->adjList[fromID];
+    graph->adjList[fromID]  = newNode;
+    contributesInDegree     = (fromTask->status == STATUS_PENDING);
+    if (contributesInDegree) graph->inDegree[toID]++;
 
     /* Run DFS on the updated graph to check for cycles. */
     if (detectCycle(graph, head)) {
         /* Cycle detected — roll back the edge immediately. */
         graph->adjList[fromID] = newNode->next;
-        graph->inDegree[toID]--;
+        if (contributesInDegree) graph->inDegree[toID]--;
         free(newNode);
         return 0;
     }
@@ -371,45 +378,6 @@ int addDependency(TaskGraph *graph, Task *head, int fromID, int toID) {
 /* ─────────────────────────────────────────────────────────────────────────
  * Dashboard Display
  * ───────────────────────────────────────────────────────────────────────── */
-
-/*
- * sortByPriority  —  In-place insertion sort of task ID array by priority.
- *
- * Purpose:
- *   Sorts an array of task IDs so that the highest-urgency tasks appear
- *   first (PRIORITY_HIGH=1 before PRIORITY_MEDIUM=2 before PRIORITY_LOW=3).
- *   Uses insertion sort — acceptable since the array holds at most MAX_TASKS
- *   (50) elements.
- *
- * Parameters:
- *   taskIDs — array of task IDs to sort in place.
- *   count   — number of elements in the array.
- *   head    — the task list used to look up each task's priority.
- */
-static void sortByPriority(int *taskIDs, int count, Task *head) {
-    int   i, j, tempID;
-    Task *taskA;
-    Task *taskB;
-
-    for (i = 1; i < count; i++) {
-        tempID = taskIDs[i];
-        taskA  = findTaskByID(head, tempID);
-        j      = i - 1;
-
-        while (j >= 0) {
-            taskB = findTaskByID(head, taskIDs[j]);
-            /* Shift right if the neighbour has a lower urgency (higher number). */
-            if (taskB != NULL && taskA != NULL &&
-                taskB->priority > taskA->priority) {
-                taskIDs[j + 1] = taskIDs[j];
-                j--;
-            } else {
-                break;
-            }
-        }
-        taskIDs[j + 1] = tempID;
-    }
-}
 
 /*
  * displayDashboard  —  Renders the two-zone auto-schedule view.
@@ -427,37 +395,39 @@ static void sortByPriority(int *taskIDs, int count, Task *head) {
  * Return Value: None.
  */
 void displayDashboard(Task *head, TaskGraph *graph) {
-    int     readyIDs[MAX_TASKS];
-    int     blockedIDs[MAX_TASKS];
-    int     readyCount   = 0;
-    int     blockedCount = 0;
-    int     i;
-    int     firstPred;
-    Task   *task;
-    Task   *scanner;
-    AdjNode *adj;
+    int           blockedIDs[MAX_TASKS];
+    int           readyCount   = 0;
+    int           blockedCount = 0;
+    int           i;
+    int           firstPred;
+    int           readyID;
+    PriorityQueue pq;
+    Task         *task;
+    Task         *scanner;
+    AdjNode      *adj;
 
     if (head == NULL) {
         printf("\n  No tasks yet. Use 'Add New Task' to create your first task.\n");
         return;
     }
 
-    /* ── Partition PENDING tasks into ready and blocked ───────────────── */
+    /* ── Partition PENDING tasks: ready ones go into the priority queue,
+     *    blocked ones into a plain array (display order = insertion order). */
+    pq_init(&pq);
     task = head;
     while (task != NULL) {
         if (task->status == STATUS_PENDING) {
-            if (graph->inDegree[task->taskID] == 0)
-                readyIDs[readyCount++]      = task->taskID;
-            else
-                blockedIDs[blockedCount++]  = task->taskID;
+            if (graph->inDegree[task->taskID] == 0) {
+                pq_enqueue(&pq, task->taskID, (int)task->priority);
+                readyCount++;
+            } else {
+                blockedIDs[blockedCount++] = task->taskID;
+            }
         }
         task = task->next;
     }
 
-    /* Sort the ready list: highest priority (lowest enum value) first. */
-    sortByPriority(readyIDs, readyCount, head);
-
-    /* ── Zone 1: Ready ────────────────────────────────────────────────── */
+    /* ── Zone 1: Ready (dequeue in priority order) ─────────────────────── */
     printf("\n ==========================================\n");
     printf("  ZONE 1 -- READY TO WORK ON  (%d task(s))\n", readyCount);
     printf(" ==========================================\n");
@@ -469,14 +439,16 @@ void displayDashboard(Task *head, TaskGraph *graph) {
                "ID", "Task Name", "Priority");
         printf("  %-4s  %-26s  %-8s\n",
                "----", "--------------------------", "--------");
-        for (i = 0; i < readyCount; i++) {
-            task = findTaskByID(head, readyIDs[i]);
+        while (!pq_isEmpty(&pq)) {
+            readyID = pq_dequeue(&pq);
+            task    = findTaskByID(head, readyID);
             if (task)
                 printf("  %-4d  %-26.26s  %-8s\n",
                        task->taskID, task->name,
                        priorityToString(task->priority));
         }
     }
+    pq_free(&pq);  /* Defensive — queue should already be empty here. */
 
     /* ── Zone 2: Blocked ──────────────────────────────────────────────── */
     printf("\n ==========================================\n");
@@ -685,6 +657,24 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
         }
     }
 
+    /* Fix-up pass: DEP parsing above increments inDegree for every edge,
+     * including edges whose source is already DONE. Those sources are no
+     * longer PENDING predecessors, so subtract their contribution here.
+     * Without this, previously-unlocked tasks would appear blocked again
+     * on every fresh login. */
+    {
+        Task    *t;
+        AdjNode *e;
+        for (t = *head; t != NULL; t = t->next) {
+            if (t->status == STATUS_DONE) {
+                for (e = graph->adjList[t->taskID]; e != NULL; e = e->next) {
+                    if (graph->inDegree[e->taskID] > 0)
+                        graph->inDegree[e->taskID]--;
+                }
+            }
+        }
+    }
+
     fclose(file);
     return 1;
 }
@@ -782,6 +772,73 @@ int deleteTask(Task **head, TaskGraph *graph, int taskID) {
 
     /* Step 6 — update the task counter. */
     graph->taskCount--;
+    return 1;
+}
+
+
+/*
+ * markDone  —  Transitions a PENDING task to DONE and propagates the
+ * unlock to its successors.
+ *
+ * Steps:
+ *   1. Locate the task; bail out if not found or already done.
+ *   2. Set status to DONE.
+ *   3. Walk adjList[taskID] and decrement inDegree of each successor —
+ *      this task is no longer a PENDING predecessor of them.
+ *   4. Edges themselves are NOT removed, so undoMarkDone() can restore
+ *      the previous state with a simple re-increment.
+ *
+ * Return Value:
+ *    1 — Marked done successfully.
+ *    0 — Task is already DONE; nothing changed.
+ *   -1 — Task not found.
+ */
+int markDone(Task *head, TaskGraph *graph, int taskID) {
+    Task    *task;
+    AdjNode *edge;
+
+    task = findTaskByID(head, taskID);
+    if (task == NULL)                return -1;
+    if (task->status == STATUS_DONE) return  0;
+
+    task->status = STATUS_DONE;
+
+    for (edge = graph->adjList[taskID]; edge != NULL; edge = edge->next) {
+        if (graph->inDegree[edge->taskID] > 0)
+            graph->inDegree[edge->taskID]--;
+    }
+    return 1;
+}
+
+
+/*
+ * undoMarkDone  —  Reverses markDone(): a DONE task returns to PENDING
+ * and its successors' in-degrees are re-incremented so they reflect the
+ * task once again as a PENDING predecessor.
+ *
+ * The increment is unconditional. The inDegree invariant is "count of
+ * PENDING predecessors regardless of the successor's own status", which
+ * keeps the graph self-consistent if the successor is ever also undone
+ * later.
+ *
+ * Return Value:
+ *    1 — Reverted to PENDING successfully.
+ *    0 — Task is already PENDING; nothing changed.
+ *   -1 — Task not found (may have been deleted since being marked done).
+ */
+int undoMarkDone(Task *head, TaskGraph *graph, int taskID) {
+    Task    *task;
+    AdjNode *edge;
+
+    task = findTaskByID(head, taskID);
+    if (task == NULL)                   return -1;
+    if (task->status != STATUS_DONE)    return  0;
+
+    task->status = STATUS_PENDING;
+
+    for (edge = graph->adjList[taskID]; edge != NULL; edge = edge->next) {
+        graph->inDegree[edge->taskID]++;
+    }
     return 1;
 }
 

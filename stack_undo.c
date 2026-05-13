@@ -1,36 +1,71 @@
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "stack_undo.h"
 
 /*
  * stack_undo.c  —  Implementation of the Undo Stack module.
  *
- * Phase 4 TODO: Implement all functions declared in stack_undo.h.
- *
- * Implementation checklist:
- *   [ ] stack_push(stack, taskID)
- *         - Allocate a new StackNode and set its taskID field.
- *         - Point the new node's next at the current stack->top.
- *         - Update stack->top to the new node.
- *
- *   [ ] stack_pop(stack)
- *         - Return -1 (invalid ID) if stack_isEmpty() is true.
- *         - Save the taskID from stack->top.
- *         - Advance stack->top to stack->top->next.
- *         - Free the old top node.
- *         - Return the saved taskID.
- *
- *   [ ] stack_peek(stack)
- *         - Return stack->top->taskID without modifying the stack.
- *         - Return -1 if the stack is empty.
- *
- *   [ ] stack_isEmpty(stack)
- *         - Return 1 if stack->top == NULL, 0 otherwise.
- *
- *   [ ] stack_free(stack)
- *         - Pop all remaining nodes to release heap memory.
- *         - Called on user logout or program exit to prevent memory leaks.
- *
- * Integration point (Phase 4):
- *   markDone() in task_graph.c calls stack_push() after changing a task's
- *   status to DONE. The Undo option in mainMenu() calls stack_pop() to get
- *   the last completed task ID, then reverts it and refreshes the graph.
+ * Standard LIFO linked-list stack. Push prepends to the head; pop removes
+ * the head. The taskID stored is the ID of a task that was just marked
+ * Done by markDone() — popping it feeds undoMarkDone() to revert.
  */
+
+void stack_init(UndoStack *s) {
+    if (s == NULL) return;
+    s->top = NULL;
+}
+
+void stack_push(UndoStack *s, int taskID) {
+    StackNode *node;
+
+    if (s == NULL) return;
+
+    node = (StackNode *)malloc(sizeof(StackNode));
+    if (node == NULL) {
+        printf("[ERROR] Out of memory while pushing task %d to undo stack.\n",
+               taskID);
+        return;
+    }
+    node->taskID = taskID;
+    node->next   = s->top;
+    s->top       = node;
+}
+
+int stack_pop(UndoStack *s) {
+    StackNode *top;
+    int        id;
+
+    if (s == NULL || s->top == NULL) return -1;
+
+    top    = s->top;
+    id     = top->taskID;
+    s->top = top->next;
+    free(top);
+    return id;
+}
+
+int stack_peek(const UndoStack *s) {
+    if (s == NULL || s->top == NULL) return -1;
+    return s->top->taskID;
+}
+
+int stack_isEmpty(const UndoStack *s) {
+    if (s == NULL) return 1;
+    return s->top == NULL;
+}
+
+void stack_free(UndoStack *s) {
+    StackNode *cur;
+    StackNode *next;
+
+    if (s == NULL) return;
+
+    cur = s->top;
+    while (cur != NULL) {
+        next = cur->next;
+        free(cur);
+        cur = next;
+    }
+    s->top = NULL;
+}
