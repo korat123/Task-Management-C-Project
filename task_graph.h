@@ -152,6 +152,39 @@ void  saveTasksToFile(Task *head, TaskGraph *graph, const char *username);
  */
 int   loadTasksFromFile(Task **head, TaskGraph *graph, const char *username);
 
+/* ── Task modification ───────────────────────────────────────────────────── */
+
+/*
+ * deleteTask  —  Removes a task and cleans up all graph references.
+ *
+ * Decrements inDegree of successors (if the task was PENDING), frees the
+ * adjacency list, removes all incoming edges pointing to this task from
+ * other lists, then unlinks and frees the Task node.
+ *
+ * Return codes:
+ *   1  — Task deleted successfully.
+ *  -1  — Task not found.
+ */
+int  deleteTask(Task **head, TaskGraph *graph, int taskID);
+
+/*
+ * searchTaskByName  —  Case-insensitive substring search on task names.
+ * Prints a formatted table of matching tasks to stdout.
+ * Returns the number of matching tasks found (0 if none).
+ */
+int  searchTaskByName(Task *head, const char *keyword);
+
+/*
+ * topologicalSortDisplay  —  Kahn's BFS topological sort display.
+ *
+ * Uses a Queue (queue.h) to process tasks in BFS order. Prints the
+ * suggested execution sequence for all PENDING tasks. If a cycle is
+ * detected in the PENDING subgraph, a warning is printed instead.
+ *
+ * Algorithm: O(V + E) where V = PENDING tasks, E = dependency edges.
+ */
+void topologicalSortDisplay(Task *head, TaskGraph *graph);
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 
 const char *priorityToString(TaskPriority priority);

@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "task_graph.h"
+#include "queue.h"
 
 /*
  * task_graph.c  —  Implementation of the Task & Dependency Graph module.
@@ -685,4 +687,271 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
 
     fclose(file);
     return 1;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Task Modification
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/*
+ * deleteTask  —  Removes one task and repairs the graph around it.
+ *
+ * Steps:
+ *   1. Locate the task in the linked list (return -1 if missing).
+ *   2. If the task is PENDING, decrement inDegree for every successor
+ *      (a DONE task would have already done this via markDone).
+ *   3. Free and NULL-out the task's adjacency list (outgoing edges).
+ *   4. Scan every other task's adjacency list and remove AdjNodes that
+ *      point to the deleted task (clean up incoming edges).
+ *   5. Unlink the Task node from the linked list and free it.
+ *   6. Decrement graph->taskCount.
+ *
+ * Parameters:
+ *   head   — pointer to the list head pointer (may change if head is deleted).
+ *   graph  — the workspace graph (modified in place).
+ *   taskID — ID of the task to delete.
+ *
+ * Return Value: 1 on success, -1 if the task was not found.
+ */
+int deleteTask(Task **head, TaskGraph *graph, int taskID) {
+    Task    *prev     = NULL;
+    Task    *current  = *head;
+    Task    *toDelete;
+    AdjNode *adj;
+    AdjNode *adjNext;
+    AdjNode *prevAdj;
+    int      i;
+
+    /* Step 1 — locate the task. */
+    while (current != NULL && current->taskID != taskID) {
+        prev    = current;
+        current = current->next;
+    }
+    if (current == NULL) return -1;
+    toDelete = current;
+
+    /* Step 2 — decrement successors' inDegrees only if this task was PENDING.
+     * A DONE task's successors were already decremented by markDone(). */
+    if (toDelete->status == STATUS_PENDING) {
+        adj = graph->adjList[taskID];
+        while (adj != NULL) {
+            if (graph->inDegree[adj->taskID] > 0)
+                graph->inDegree[adj->taskID]--;
+            adj = adj->next;
+        }
+    }
+
+    /* Step 3 — free the outgoing adjacency list. */
+    adj = graph->adjList[taskID];
+    while (adj != NULL) {
+        adjNext = adj->next;
+        free(adj);
+        adj = adjNext;
+    }
+    graph->adjList[taskID]  = NULL;
+    graph->inDegree[taskID] = 0;
+
+    /* Step 4 — remove all incoming edges that point to taskID. */
+    for (i = 1; i <= MAX_TASKS; i++) {
+        if (i == taskID) continue;
+        prevAdj = NULL;
+        adj     = graph->adjList[i];
+        while (adj != NULL) {
+            if (adj->taskID == taskID) {
+                if (prevAdj == NULL)
+                    graph->adjList[i] = adj->next;
+                else
+                    prevAdj->next = adj->next;
+                adjNext = adj->next;
+                free(adj);
+                adj = adjNext;
+            } else {
+                prevAdj = adj;
+                adj     = adj->next;
+            }
+        }
+    }
+
+    /* Step 5 — unlink and free the Task node. */
+    if (prev == NULL)
+        *head = toDelete->next;
+    else
+        prev->next = toDelete->next;
+    free(toDelete);
+
+    /* Step 6 — update the task counter. */
+    graph->taskCount--;
+    return 1;
+}
+
+
+/*
+ * searchTaskByName  —  Case-insensitive substring search over task names.
+ *
+ * Purpose:
+ *   Converts both the keyword and each task name to lowercase, then uses
+ *   strstr() to find matches. Prints a formatted results table to stdout.
+ *
+ * Parameters:
+ *   head    — head of the task linked list.
+ *   keyword — the substring to search for (case-insensitive).
+ *
+ * Return Value: Number of tasks whose names contain the keyword (0 if none).
+ */
+int searchTaskByName(Task *head, const char *keyword) {
+    Task *current;
+    char  lowerName[MAX_TASK_NAME];
+    char  lowerKeyword[MAX_TASK_NAME];
+    int   count = 0;
+    int   i;
+
+    /* Build a lowercase copy of the keyword. */
+    for (i = 0; keyword[i] != '\0' && i < MAX_TASK_NAME - 1; i++)
+        lowerKeyword[i] = (char)tolower((unsigned char)keyword[i]);
+    lowerKeyword[i] = '\0';
+
+    printf("\n Search Results for \"%s\":\n", keyword);
+    printf("  %-4s  %-26s  %-8s  %s\n",
+           "ID", "Task Name", "Priority", "Status");
+    printf("  %-4s  %-26s  %-8s  %s\n",
+           "----", "--------------------------", "--------", "-------");
+
+    current = head;
+    while (current != NULL) {
+        /* Build a lowercase copy of this task's name. */
+        for (i = 0; current->name[i] != '\0' && i < MAX_TASK_NAME - 1; i++)
+            lowerName[i] = (char)tolower((unsigned char)current->name[i]);
+        lowerName[i] = '\0';
+
+        if (strstr(lowerName, lowerKeyword) != NULL) {
+            printf("  %-4d  %-26.26s  %-8s  %s\n",
+                   current->taskID, current->name,
+                   priorityToString(current->priority),
+                   statusToString(current->status));
+            count++;
+        }
+        current = current->next;
+    }
+
+    if (count == 0)
+        printf("  (No tasks found matching \"%s\")\n", keyword);
+    else
+        printf("\n  Found %d matching task(s).\n", count);
+
+    return count;
+}
+
+
+/*
+ * topologicalSortDisplay  —  Kahn's BFS algorithm display.
+ *
+ * Purpose:
+ *   Computes and prints the suggested execution order for all PENDING tasks
+ *   using Kahn's algorithm (BFS variant):
+ *     1. Copy inDegree values into a local array (original graph is not mutated).
+ *     2. Enqueue all PENDING tasks whose local in-degree is 0.
+ *     3. Dequeue one task at a time, print its position in the execution order,
+ *        then decrement the local in-degree of each of its PENDING successors.
+ *        If a successor's in-degree reaches 0, enqueue it.
+ *     4. If the number of processed tasks < total PENDING tasks, a cycle exists.
+ *
+ * Uses the Queue module (queue.h / queue.c) for the BFS frontier.
+ * Time complexity: O(V + E) where V = PENDING tasks, E = dependency edges.
+ *
+ * Parameters:
+ *   head  — head of the task linked list.
+ *   graph — the dependency graph (read-only; local deg[] copy is mutated).
+ *
+ * Return Value: None.
+ */
+void topologicalSortDisplay(Task *head, TaskGraph *graph) {
+    int      localDeg[MAX_TASKS + 1];
+    int      pendingCount = 0;
+    int      processed    = 0;
+    int      order        = 1;
+    int      i;
+    int      taskID;
+    Task    *current;
+    Task    *succ;
+    AdjNode *adj;
+    Queue    bfsQueue;
+
+    if (head == NULL) {
+        printf("\n  No tasks yet. Use 'Add New Task' to create your first task.\n");
+        return;
+    }
+
+    /* Initialise local in-degree array. */
+    for (i = 0; i <= MAX_TASKS; i++)
+        localDeg[i] = 0;
+
+    /* Copy real inDegrees for PENDING tasks only. */
+    current = head;
+    while (current != NULL) {
+        if (current->status == STATUS_PENDING) {
+            localDeg[current->taskID] = graph->inDegree[current->taskID];
+            pendingCount++;
+        }
+        current = current->next;
+    }
+
+    if (pendingCount == 0) {
+        printf("\n  All tasks are already done. Nothing left to schedule.\n");
+        return;
+    }
+
+    printf("\n ============================================================\n");
+    printf("  TOPOLOGICAL EXECUTION ORDER  (Kahn's BFS Algorithm)\n");
+    printf(" ============================================================\n");
+    printf("  Suggested sequence for completing all pending tasks:\n\n");
+    printf("  %-6s  %-4s  %-26s  %-8s\n",
+           "Step", "ID", "Task Name", "Priority");
+    printf("  %-6s  %-4s  %-26s  %-8s\n",
+           "------", "----", "--------------------------", "--------");
+
+    /* Step 2 — seed the queue with zero-in-degree PENDING tasks. */
+    q_init(&bfsQueue);
+    current = head;
+    while (current != NULL) {
+        if (current->status == STATUS_PENDING &&
+            localDeg[current->taskID] == 0)
+            q_enqueue(&bfsQueue, current->taskID);
+        current = current->next;
+    }
+
+    /* Step 3 — BFS processing loop. */
+    while (!q_isEmpty(&bfsQueue)) {
+        taskID  = q_dequeue(&bfsQueue);
+        current = findTaskByID(head, taskID);
+        if (current == NULL) continue;
+
+        printf("  %-6d  %-4d  %-26.26s  %-8s\n",
+               order++, current->taskID, current->name,
+               priorityToString(current->priority));
+        processed++;
+
+        /* Reduce in-degree for each PENDING successor. */
+        adj = graph->adjList[taskID];
+        while (adj != NULL) {
+            succ = findTaskByID(head, adj->taskID);
+            if (succ != NULL && succ->status == STATUS_PENDING) {
+                localDeg[adj->taskID]--;
+                if (localDeg[adj->taskID] == 0)
+                    q_enqueue(&bfsQueue, adj->taskID);
+            }
+            adj = adj->next;
+        }
+    }
+
+    q_free(&bfsQueue);
+
+    /* Step 4 — report cycle if not all tasks were reached. */
+    if (processed < pendingCount) {
+        printf("\n  [WARNING] Cycle detected in the dependency graph.\n");
+        printf("  Only %d of %d pending task(s) could be ordered.\n",
+               processed, pendingCount);
+    } else {
+        printf("\n  All %d pending task(s) listed above.\n", processed);
+    }
 }

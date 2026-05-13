@@ -147,6 +147,7 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
     int  toID;
     int  result;
     Task *task;
+    /* nameBuffer is reused for keyword input in Search (case 7). */
 
     while (1) {
         clearScreen();
@@ -160,6 +161,9 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
         printf("  [3]  Set Task Dependency\n");
         printf("  [4]  Mark Task as Done               (Phase 3)\n");
         printf("  [5]  Undo Last Action                (Phase 4)\n");
+        printf("  [6]  Delete Task\n");
+        printf("  [7]  Search Task by Name\n");
+        printf("  [8]  View Topological Execution Order\n");
         printf("  [0]  Logout\n");
         printf(" ----------------------------\n");
         printf(" Enter your choice: ");
@@ -332,17 +336,109 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
 
-            /* ── [4] & [5] Phase 3 / 4 stubs ─────────────────────────────  */
+            /* ── [4] Phase 3 stub ────────────────────────────────────────  */
             case 4:
-            case 5:
-                printf("\n[SYSTEM] This feature will be available "
-                       "in the next development phase.\n");
+                printf("\n[SYSTEM] 'Mark Task as Done' will be available in Phase 3.\n");
                 printf("Press Enter to continue...");
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
 
+            /* ── [5] Phase 4 stub ────────────────────────────────────────  */
+            case 5:
+                printf("\n[SYSTEM] 'Undo Last Action' will be available in Phase 4.\n");
+                printf("Press Enter to continue...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+
+            /* ── [6] Delete Task ──────────────────────────────────────────  */
+            case 6:
+                clearScreen();
+                printBanner();
+                printf(" --- Delete Task ---\n\n");
+
+                if (graph->taskCount == 0) {
+                    printf("[INFO] No tasks to delete.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                printf(" Current Tasks:\n");
+                printf("  %-4s  %-26s  %-8s  %s\n",
+                       "ID", "Task Name", "Priority", "Status");
+                printf("  %-4s  %-26s  %-8s  %s\n",
+                       "----", "--------------------------", "--------", "-------");
+                task = *taskList;
+                while (task != NULL) {
+                    printf("  %-4d  %-26.26s  %-8s  %s\n",
+                           task->taskID, task->name,
+                           priorityToString(task->priority),
+                           statusToString(task->status));
+                    task = task->next;
+                }
+
+                printf("\n Task ID to delete: ");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                menuInput[strcspn(menuInput, "\n")] = '\0';
+                if (strlen(menuInput) == 0) {
+                    printf("\n[ERROR] Task ID cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+                fromID = atoi(menuInput);
+                result = deleteTask(taskList, graph, fromID);
+                if (result == 1) {
+                    saveTasksToFile(*taskList, graph, username);
+                    printf("\n[SUCCESS] Task #%d has been deleted.\n", fromID);
+                } else {
+                    printf("\n[ERROR] Task #%d not found.\n", fromID);
+                }
+                printf("Press Enter to continue...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+
+            /* ── [7] Search Task by Name ──────────────────────────────────  */
+            case 7:
+                clearScreen();
+                printBanner();
+                printf(" --- Search Task by Name ---\n\n");
+
+                if (*taskList == NULL) {
+                    printf("[INFO] No tasks exist yet.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                printf(" Keyword: ");
+                fgets(nameBuffer, sizeof(nameBuffer), stdin);
+                nameBuffer[strcspn(nameBuffer, "\n")] = '\0';
+                if (strlen(nameBuffer) == 0) {
+                    printf("\n[ERROR] Keyword cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+                searchTaskByName(*taskList, nameBuffer);
+                printf("\nPress Enter to return to the menu...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+
+            /* ── [8] View Topological Execution Order ─────────────────────  */
+            case 8:
+                clearScreen();
+                printBanner();
+                printf(" Topological Execution Order  |  User: [%s]  |  Tasks: %d\n",
+                       username, graph->taskCount);
+                printf(" ============================================================\n");
+                topologicalSortDisplay(*taskList, graph);
+                printf("\nPress Enter to return to the menu...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+
             default:
-                printf("\n[ERROR] Invalid option. Please enter a number from 0 to 5.\n");
+                printf("\n[ERROR] Invalid option. Please enter a number from 0 to 8.\n");
                 printf("Press Enter to continue...");
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
