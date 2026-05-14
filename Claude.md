@@ -60,7 +60,7 @@ Task-Management-C-Project/
 ```bash
 gcc -Wall -Wextra -I include -o task_manager \
     src/main.c src/auth.c src/task_graph.c \
-    src/priority_queue.c src/stack_undo.c src/queue.c
+    src/priority_queue.c src/stack_undo.c src/queue.c src/hash_table.c
 ```
 
 ## Module Summary

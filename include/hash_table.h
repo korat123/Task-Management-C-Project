@@ -11,8 +11,10 @@ typedef struct HashNode {
     struct HashNode* next;
 } HashNode;
 
-void init_hash_table();
+void init_hash_table(void);
 void insert_tag(Task* task);
 void search_by_tag(const char* tag);
+void remove_tag(int taskID);
+void clear_hash_table(void);
 
 #endif

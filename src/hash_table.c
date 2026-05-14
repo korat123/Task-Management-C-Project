@@ -40,6 +40,51 @@ void insert_tag(Task* task) {
     hash_table[index] = new_node;
 }
 
+// Remove all HashNodes that point to the task with the given ID.
+// Must be called before freeing the Task node.
+void remove_tag(int taskID) {
+    int i;
+    HashNode *prev;
+    HashNode *cur;
+    HashNode *next;
+
+    for (i = 0; i < TABLE_SIZE; i++) {
+        prev = NULL;
+        cur  = hash_table[i];
+        while (cur != NULL) {
+            next = cur->next;
+            if (cur->task_ptr->taskID == taskID) {
+                if (prev == NULL)
+                    hash_table[i] = next;
+                else
+                    prev->next = next;
+                free(cur);
+            } else {
+                prev = cur;
+            }
+            cur = next;
+        }
+    }
+}
+
+// Free every HashNode in every bucket and reset the table to all-NULL.
+// Call at user logout so the next session starts with a clean table.
+void clear_hash_table(void) {
+    int i;
+    HashNode *cur;
+    HashNode *next;
+
+    for (i = 0; i < TABLE_SIZE; i++) {
+        cur = hash_table[i];
+        while (cur != NULL) {
+            next = cur->next;
+            free(cur);
+            cur = next;
+        }
+        hash_table[i] = NULL;
+    }
+}
+
 // Search and print all tasks with a matching tag (O(1) average time)
 void search_by_tag(const char* search_tag) {
     unsigned long index = hash_string(search_tag);

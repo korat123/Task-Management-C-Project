@@ -790,6 +790,7 @@ int deleteTask(Task **head, TaskGraph *graph, int taskID) {
         *head = toDelete->next;
     else
         prev->next = toDelete->next;
+    remove_tag(toDelete->taskID);
     free(toDelete);
 
     /* Step 6 — update the task counter. */

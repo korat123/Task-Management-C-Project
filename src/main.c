@@ -192,6 +192,7 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
             /* ── [0] Logout ─────────────────────────────────────────────── */
             case 0:
                 saveTasksToFile(*taskList, graph, username);
+                clear_hash_table();
                 stack_free(&undoStack);  /* In-memory undo history ends here. */
                 printf("\n[SYSTEM] Data saved. Goodbye, %s!\n", username);
                 printf("Press Enter to continue...");
