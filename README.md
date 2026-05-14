@@ -77,3 +77,10 @@ gcc -Wall -Wextra -I include -o task_manager \
     src/main.c src/auth.c src/task_graph.c \
     src/priority_queue.c src/stack_undo.c src/queue.c src/hash_table.c
 ```
+
+## Team Members
+```
+Name: Korat Keaukob                 ID: 68070503410
+Name: Nartthawat Chomchoochuen      ID: 68070503433
+Name: Manatsanan Jongjeerangsub     ID: 68070503449
+```
