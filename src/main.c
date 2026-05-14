@@ -9,6 +9,7 @@
 #include "auth.h"
 #include "task_graph.h"
 #include "stack_undo.h"
+#include "hash_table.h"
 
 /*
  * main.c  —  Program entry point, terminal UI, and top-level menu controller.
@@ -176,6 +177,7 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
         printf("  [6]  Delete Task\n");
         printf("  [7]  Search Task by Name\n");
         printf("  [8]  View Topological Execution Order\n");
+        printf("  [9]  View Tasks by Tag\n");
         printf("  [0]  Logout\n");
         printf(" ----------------------------\n");
         printf(" Enter your choice: ");
@@ -250,8 +252,19 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
                     break;
                 }
 
+                char tagBuffer[30];
+                printf(" Task Tag (e.g., Study, Work, None) : ");
+                fgets(tagBuffer, sizeof(tagBuffer), stdin);
+                tagBuffer[strcspn(tagBuffer, "\n")] = '\0';
+
+                // If they just press Enter, default to "None"
+                if (strlen(tagBuffer) == 0) {
+                    strcpy(tagBuffer, "None");
+                }
+
                 result = addTask(taskList, graph,
-                                 nameBuffer, (TaskPriority)priorityChoice);
+                                 nameBuffer, (TaskPriority)priorityChoice, tagBuffer);
+
                 if (result > 0) {
                     saveTasksToFile(*taskList, graph, username);
                     printf("\n[SUCCESS] Task '%s' created with ID #%d.\n",
@@ -532,8 +545,39 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;
 
+            /* ── [9] View Tasks by Tag ────────────────────────────────────  */
+            case 9:
+                clearScreen();
+                printBanner();
+                printf(" --- View Tasks by Tag ---\n\n");
+
+                if (graph->taskCount == 0) {
+                    printf("[INFO] No tasks exist yet.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                printf(" Enter tag to search: ");
+                fgets(nameBuffer, sizeof(nameBuffer), stdin);
+                nameBuffer[strcspn(nameBuffer, "\n")] = '\0';
+
+                if (strlen(nameBuffer) == 0) {
+                    printf("\n[ERROR] Tag cannot be empty.\n");
+                    printf("Press Enter to continue...");
+                    fgets(menuInput, sizeof(menuInput), stdin);
+                    break;
+                }
+
+                /* Call the Hash Table function */
+                search_by_tag(nameBuffer);
+
+                printf("\nPress Enter to return to the menu...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                break;
+
             default:
-                printf("\n[ERROR] Invalid option. Please enter a number from 0 to 8.\n");
+                printf("\n[ERROR] Invalid option. Please enter a number from 0 to 9.\n");
                 printf("Press Enter to continue...");
                 fgets(menuInput, sizeof(menuInput), stdin);
                 break;

@@ -55,6 +55,7 @@ typedef struct Task {
     char         name[MAX_TASK_NAME];
     TaskPriority priority;
     TaskStatus   status;
+    char tag[30];
     struct Task *next;
 } Task;
 
@@ -104,8 +105,7 @@ void  freeTaskList(Task **head);
  * addTask  —  Appends a new task to the list and registers it in the graph.
  * Returns the auto-assigned task ID on success, or -1 if the task cap is full.
  */
-int   addTask(Task **head, TaskGraph *graph,
-              const char *name, TaskPriority priority);
+int addTask(Task **head, TaskGraph *graph, const char *name, TaskPriority priority, const char *tag);
 
 /* Linear search for a task by ID; returns NULL if not found. */
 Task *findTaskByID(Task *head, int taskID);
