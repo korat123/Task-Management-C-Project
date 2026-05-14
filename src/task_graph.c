@@ -5,6 +5,7 @@
 #include "task_graph.h"
 #include "queue.h"
 #include "priority_queue.h"
+#include "hash_table.h"
 
 /*
  * task_graph.c  —  Implementation of the Task & Dependency Graph module.
@@ -158,7 +159,7 @@ void freeTaskList(Task **head) {
  *  -1 if the MAX_TASKS cap has been reached or malloc fails.
  */
 int addTask(Task **head, TaskGraph *graph,
-            const char *name, TaskPriority priority) {
+            const char *name, TaskPriority priority, const char *tag) {
     Task *newTask;
     Task *tail;
 
@@ -170,11 +171,15 @@ int addTask(Task **head, TaskGraph *graph,
     newTask->taskID   = graph->nextID++;
     strncpy(newTask->name, name, MAX_TASK_NAME - 1);
     newTask->name[MAX_TASK_NAME - 1] = '\0';
+
+    strncpy(newTask->tag, tag, 29); // Assuming MAX_TAG_LEN is 30
+    newTask->tag[29] = '\0';
+
     newTask->priority = priority;
     newTask->status   = STATUS_PENDING;
     newTask->next     = NULL;
 
-    /* Append to the tail so the list stays in insertion (creation) order. */
+    /* Append to the tail so the list stays in insertion order. */
     if (*head == NULL) {
         *head = newTask;
     } else {
@@ -183,6 +188,9 @@ int addTask(Task **head, TaskGraph *graph,
             tail = tail->next;
         tail->next = newTask;
     }
+
+    /* <-- NEW: Insert the new task into the Hash Table --> */
+    insert_tag(newTask);
 
     graph->taskCount++;
     return newTask->taskID;
@@ -548,11 +556,12 @@ void saveTasksToFile(Task *head, TaskGraph *graph, const char *username) {
     /* Write task records. */
     current = head;
     while (current != NULL) {
-        fprintf(file, "TASK|%d|%d|%d|%s\n",
+        fprintf(file, "TASK|%d|%d|%d|%s|%s\n",
                 current->taskID,
                 (int)current->priority,
                 (int)current->status,
-                current->name);
+                current->name,
+                current->tag);
         current = current->next;
     }
 
@@ -591,13 +600,14 @@ void saveTasksToFile(Task *head, TaskGraph *graph, const char *username) {
  */
 int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
     char  filename[MAX_TASK_NAME];
-    char  lineBuffer[MAX_TASK_NAME + 30];
+    char  lineBuffer[MAX_TASK_NAME + 60]; // slightly larger buffer
     FILE *file;
     Task *newTask;
     Task *tail;
     AdjNode *newNode;
     int   id, pri, sta, fromID, toID, nextID;
     char  name[MAX_TASK_NAME];
+    char  tag[30]; /* <-- NEW: buffer for the tag */
 
     snprintf(filename, sizeof(filename), "data/%s_tasks.txt", username);
 
@@ -607,14 +617,23 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
 
     tail = NULL; /* Track the list tail for O(1) append during load. */
 
+    /* THIS is the loop that was accidentally deleted! */
     while (fgets(lineBuffer, sizeof(lineBuffer), file) != NULL) {
         lineBuffer[strcspn(lineBuffer, "\n")] = '\0';
 
         if (strncmp(lineBuffer, "TASK|", 5) == 0) {
-            /* Format: TASK|id|priority|status|name */
-            if (sscanf(lineBuffer, "TASK|%d|%d|%d|%99[^\n]",
-                       &id, &pri, &sta, name) != 4)
-                continue;
+            /* NEW Format: TASK|id|priority|status|name|tag */
+            if (sscanf(lineBuffer, "TASK|%d|%d|%d|%99[^|]|%29[^\n]",
+                       &id, &pri, &sta, name, tag) != 5) {
+
+                /* Fallback for old save files without tags */
+                if (sscanf(lineBuffer, "TASK|%d|%d|%d|%99[^\n]",
+                           &id, &pri, &sta, name) == 4) {
+                    strcpy(tag, "Uncategorized");
+                } else {
+                    continue;
+                }
+            }
 
             newTask = (Task *)malloc(sizeof(Task));
             if (newTask == NULL) continue;
@@ -622,11 +641,16 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             newTask->taskID   = id;
             strncpy(newTask->name, name, MAX_TASK_NAME - 1);
             newTask->name[MAX_TASK_NAME - 1] = '\0';
+
+            /* Copy the loaded tag */
+            strncpy(newTask->tag, tag, 29);
+            newTask->tag[29] = '\0';
+
             newTask->priority = (TaskPriority)pri;
             newTask->status   = (TaskStatus)sta;
             newTask->next     = NULL;
 
-            /* Append to the tail — preserves the original insertion order. */
+            /* Append to the tail... */
             if (*head == NULL) {
                 *head = newTask;
                 tail  = newTask;
@@ -636,6 +660,9 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             }
             graph->taskCount++;
 
+            /* Insert loaded task into Hash Table */
+            insert_tag(newTask);
+
         } else if (strncmp(lineBuffer, "DEP|", 4) == 0) {
             /* Format: DEP|fromID|toID */
             if (sscanf(lineBuffer, "DEP|%d|%d", &fromID, &toID) != 2)
@@ -644,7 +671,6 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             newNode = (AdjNode *)malloc(sizeof(AdjNode));
             if (newNode == NULL) continue;
 
-            /* Prepend to adjList (no cycle check — file data is trusted). */
             newNode->taskID           = toID;
             newNode->next             = graph->adjList[fromID];
             graph->adjList[fromID]    = newNode;
@@ -657,11 +683,7 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
         }
     }
 
-    /* Fix-up pass: DEP parsing above increments inDegree for every edge,
-     * including edges whose source is already DONE. Those sources are no
-     * longer PENDING predecessors, so subtract their contribution here.
-     * Without this, previously-unlocked tasks would appear blocked again
-     * on every fresh login. */
+    /* Fix-up pass */
     {
         Task    *t;
         AdjNode *e;
