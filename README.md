@@ -58,8 +58,9 @@ Task-Management-C-Project/
     queue.c                 FIFO Queue (used by Kahn's BFS)
     priority_queue.c        Sorted Priority Queue for ranking ready tasks
     stack_undo.c            LIFO Undo Stack
+    hash_table.c            Hash Table for tag-based task lookup
   include/                ← Header files (one per module)
-    auth.h, task_graph.h, queue.h, priority_queue.h, stack_undo.h
+    auth.h, task_graph.h, queue.h, priority_queue.h, stack_undo.h, hash_table.h
   data/                   ← Runtime data (auto-created at startup)
     users.txt
     <username>_tasks.txt
@@ -74,5 +75,5 @@ Task-Management-C-Project/
 ```bash
 gcc -Wall -Wextra -I include -o task_manager \
     src/main.c src/auth.c src/task_graph.c \
-    src/priority_queue.c src/stack_undo.c src/queue.c
+    src/priority_queue.c src/stack_undo.c src/queue.c src/hash_table.c
 ```

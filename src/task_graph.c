@@ -172,8 +172,8 @@ int addTask(Task **head, TaskGraph *graph,
     strncpy(newTask->name, name, MAX_TASK_NAME - 1);
     newTask->name[MAX_TASK_NAME - 1] = '\0';
 
-    strncpy(newTask->tag, tag, 29); // Assuming MAX_TAG_LEN is 30
-    newTask->tag[29] = '\0';
+    strncpy(newTask->tag, tag, MAX_TAG_NAME - 1);
+    newTask->tag[MAX_TAG_NAME - 1] = '\0';
 
     newTask->priority = priority;
     newTask->status   = STATUS_PENDING;
@@ -189,7 +189,6 @@ int addTask(Task **head, TaskGraph *graph,
         tail->next = newTask;
     }
 
-    /* <-- NEW: Insert the new task into the Hash Table --> */
     insert_tag(newTask);
 
     graph->taskCount++;
@@ -600,14 +599,14 @@ void saveTasksToFile(Task *head, TaskGraph *graph, const char *username) {
  */
 int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
     char  filename[MAX_TASK_NAME];
-    char  lineBuffer[MAX_TASK_NAME + 60]; // slightly larger buffer
+    char  lineBuffer[MAX_TASK_NAME + 60];
     FILE *file;
     Task *newTask;
     Task *tail;
     AdjNode *newNode;
     int   id, pri, sta, fromID, toID, nextID;
     char  name[MAX_TASK_NAME];
-    char  tag[30]; /* <-- NEW: buffer for the tag */
+    char  tag[MAX_TAG_NAME];
 
     snprintf(filename, sizeof(filename), "data/%s_tasks.txt", username);
 
@@ -625,8 +624,7 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             /* NEW Format: TASK|id|priority|status|name|tag */
             if (sscanf(lineBuffer, "TASK|%d|%d|%d|%99[^|]|%29[^\n]",
                        &id, &pri, &sta, name, tag) != 5) {
-
-                /* Fallback for old save files without tags */
+                /* Fallback for task files saved before the tag field was added. */
                 if (sscanf(lineBuffer, "TASK|%d|%d|%d|%99[^\n]",
                            &id, &pri, &sta, name) == 4) {
                     strcpy(tag, "Uncategorized");
@@ -642,9 +640,8 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             strncpy(newTask->name, name, MAX_TASK_NAME - 1);
             newTask->name[MAX_TASK_NAME - 1] = '\0';
 
-            /* Copy the loaded tag */
-            strncpy(newTask->tag, tag, 29);
-            newTask->tag[29] = '\0';
+            strncpy(newTask->tag, tag, MAX_TAG_NAME - 1);
+            newTask->tag[MAX_TAG_NAME - 1] = '\0';
 
             newTask->priority = (TaskPriority)pri;
             newTask->status   = (TaskStatus)sta;
@@ -660,7 +657,6 @@ int loadTasksFromFile(Task **head, TaskGraph *graph, const char *username) {
             }
             graph->taskCount++;
 
-            /* Insert loaded task into Hash Table */
             insert_tag(newTask);
 
         } else if (strncmp(lineBuffer, "DEP|", 4) == 0) {

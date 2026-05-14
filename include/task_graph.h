@@ -18,6 +18,7 @@
 
 #define MAX_TASKS     50    /* Hard cap on tasks per user workspace             */
 #define MAX_TASK_NAME 100   /* Max task name length, including null terminator  */
+#define MAX_TAG_NAME  30    /* Max tag string length, including null terminator */
 
 /* ── Enumerations ────────────────────────────────────────────────────────── */
 
@@ -55,7 +56,7 @@ typedef struct Task {
     char         name[MAX_TASK_NAME];
     TaskPriority priority;
     TaskStatus   status;
-    char tag[30];
+    char         tag[MAX_TAG_NAME];
     struct Task *next;
 } Task;
 

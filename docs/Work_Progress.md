@@ -12,7 +12,7 @@ Any teammate can clone the repo and be running the project in one command:
 # Compile (run from the project root folder)
 gcc -Wall -Wextra -I include -o task_manager \
     src/main.c src/auth.c src/task_graph.c \
-    src/priority_queue.c src/stack_undo.c src/queue.c
+    src/priority_queue.c src/stack_undo.c src/queue.c src/hash_table.c
 
 # Run on Windows
 task_manager.exe
@@ -21,7 +21,7 @@ task_manager.exe
 ./task_manager
 ```
 
-> All six `.c` files must be on the compile line. The `-I include` flag lets the compiler
+> All seven `.c` files must be on the compile line. The `-I include` flag lets the compiler
 > find all headers in the `include/` folder without changing any `#include` directives.
 
 ---
