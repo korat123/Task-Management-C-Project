@@ -1,0 +1,698 @@
+================================================================================
+        SMART TASK MANAGEMENT SYSTEM — COMPLETE PROJECT CONCLUSION
+================================================================================
+
+================================================================================
+1. PROJECT IDENTITY
+================================================================================
+
+Project Title   : Smart Task Management System
+Course          : CPE112 — Data Structures
+Institution     : King Mongkut's University of Technology North Bangkok (KMUTNB)
+Language        : Pure C (C99 standard)
+Development     : 2026-05-12 to 2026-05-16
+
+Team Members:
+  - Korat Keaukob              (Student ID: 68070503410)
+  - Nartthawat Chomchoochuen   (Student ID: 68070503433)
+  - Manatsanan Jongjeerangsub  (Student ID: 68070503449)
+
+Repository Layout:
+  Task-Management-C-Project/
+  |-- src/          (all .c implementation files)
+  |-- include/      (all .h header files)
+  |-- data/         (runtime files: users.txt, per-user task files)
+  |-- docs/         (Work_Progress.md, assignment PDF)
+  |-- ConcludeAll.txt
+  |-- README.md
+  |-- CLAUDE.md
+
+
+================================================================================
+2. PROJECT OBJECTIVE
+================================================================================
+
+The objective of this project is to design and implement a console-based task
+management system in pure C that demonstrates the practical application of core
+data structures taught in CPE112. The system allows multiple registered users to
+create tasks, define prerequisite relationships between them (e.g. "Task A must
+be completed before Task B can start"), automatically determine which tasks are
+currently available to work on, rank those tasks by priority, and undo the most
+recent completion when needed.
+
+From an academic perspective, each major feature of the system was intentionally
+designed around a specific data structure: tasks are stored in a singly linked
+list, their dependencies form a directed graph represented as an adjacency list,
+scheduling uses Kahn's BFS topological sort, priority ranking uses a sorted
+priority queue, and undo uses a LIFO stack. Tag-based search is powered by a
+hash table. The result is a working program that is simultaneously a study of
+how abstract data structures solve real scheduling problems.
+
+
+================================================================================
+3. FEATURES OVERVIEW
+================================================================================
+
+Authentication Screen:
+  [1] Login      — Authenticate with a username and password. On success, the
+                   user's personal task workspace is loaded from disk.
+  [2] Register   — Create a new account. Validates uniqueness, enforces a
+                   100-user cap, and persists credentials to data/users.txt.
+  [0] Exit       — Cleanly terminate the program.
+
+Task Management Menu (available after login):
+  [1] View Auto-Schedule Dashboard     — Displays all tasks split into two
+      zones: Zone 1 lists tasks that are currently READY (no unfinished
+      prerequisites), sorted High → Medium → Low priority; Zone 2 lists tasks
+      that are BLOCKED and shows which task is blocking each one.
+
+  [2] Add New Task                     — Create a task by entering a name,
+      choosing a priority (High / Medium / Low), and optionally assigning a
+      tag (e.g. "Study", "Work"). Tasks are auto-assigned an integer ID.
+
+  [3] Set Task Dependency              — Define that Task A must be fully
+      completed before Task B can start. The system validates both tasks
+      exist, rejects self-dependencies, rejects duplicate edges, and runs
+      a DFS cycle check to ensure no circular chains are introduced.
+
+  [4] Mark Task as Done                — Marks a pending task as completed.
+      All tasks that were blocked only by this task become immediately
+      available. The action is saved to disk and the undo stack is updated.
+
+  [5] Undo Last Action                 — Reverts the most recently completed
+      task back to Pending status, re-blocking any tasks that depended on it.
+      Works within the current session only.
+
+  [6] Delete Task                      — Permanently removes a task and all
+      edges connected to it, repairing the dependency graph automatically.
+
+  [7] Search Task by Name              — Case-insensitive keyword search
+      across all task names. Displays a formatted table of matches.
+
+  [8] View Topological Execution Order — Runs Kahn's algorithm to show one
+      valid order in which all pending tasks could be completed, respecting
+      all dependencies.
+
+  [9] View Tasks by Tag                — Uses the hash table to find and
+      display all tasks that carry a specific tag label.
+
+  [0] Logout                           — Saves all data to disk, frees the
+      in-memory undo history, and returns to the authentication screen.
+
+
+================================================================================
+4. SYSTEM ARCHITECTURE
+================================================================================
+
+The system is divided into seven modules, each with a distinct responsibility.
+This separation ensures that no single file grows unmanageable and that the data
+structure for each feature is isolated behind a clean interface.
+
+  Module                    | Files                                   | Phase
+  --------------------------+-----------------------------------------+-------
+  Main UI & Controller      | src/main.c                              | 1-4
+  User Authentication       | include/auth.h, src/auth.c              | 1
+  Task & Dependency Graph   | include/task_graph.h, src/task_graph.c  | 2
+  FIFO Queue (BFS helper)   | include/queue.h, src/queue.c            | 2
+  Priority Queue            | include/priority_queue.h,               | 3
+                            | src/priority_queue.c                    |
+  Undo Stack                | include/stack_undo.h, src/stack_undo.c  | 4
+  Hash Table (Tag Search)   | include/hash_table.h, src/hash_table.c  | Extra
+
+Design Philosophy:
+  - Pure C only — no C++, no STL, no external libraries. Every data structure
+    is built from scratch using structs and pointers.
+  - main.c owns the UI and control flow exclusively. All business logic lives
+    in the respective module.
+  - All user input is read with fgets(), never scanf(), to prevent buffer
+    overflows and stuck-input states.
+  - The UI is cross-platform: clearScreen() calls system("cls") on Windows and
+    system("clear") on Linux/macOS via #ifdef _WIN32 guards.
+  - Data is persisted to plain .txt files after every write operation so the
+    system is durable across sessions without a database.
+
+
+================================================================================
+5. DATA STRUCTURES USED — WITH THEORY COMPARISONS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1  Singly Linked List  (Task Storage)
+--------------------------------------------------------------------------------
+Location  : include/task_graph.h (Task struct), src/task_graph.c
+Usage     : The master list of all tasks for a logged-in user. Each Task node
+            stores taskID, name, priority, status, tag, and a *next pointer.
+
+  Chosen approach : Singly Linked List
+  Alternative     : Static Array (Task tasks[MAX_TASKS])
+
+  Comparison:
+    Property          | Singly Linked List       | Static Array
+    ------------------+--------------------------+-----------------------------
+    Insert new task   | O(1) — attach to tail    | O(1) — write to next index
+    Delete any task   | O(n) find + O(1) splice  | O(n) find + O(n) shift
+    Memory usage      | Only as many nodes as    | Always MAX_TASKS * sizeof
+                      | tasks exist              | (Task) allocated up front
+    Dynamic growth    | Yes — malloc per node    | No — fixed at compile time
+    Cache locality    | Lower (scattered malloc) | Higher (contiguous block)
+
+  Why linked list was chosen:
+    Tasks are added and deleted frequently throughout a session. A linked list
+    avoids the O(n) element-shift cost of array deletion, which matters when
+    deleting a task also requires repairing dependency edges across the graph.
+    The 50-task cap makes the cache advantage of arrays negligible in practice.
+
+--------------------------------------------------------------------------------
+5.2  Adjacency List (Directed Dependency Graph)
+--------------------------------------------------------------------------------
+Location  : include/task_graph.h (AdjNode struct, TaskGraph struct),
+            src/task_graph.c
+Usage     : TaskGraph holds an array of linked-list heads: adjList[fromID]
+            points to a chain of AdjNode records, each storing a toID.
+            Edge A->B means "Task A must complete before Task B can start."
+            inDegree[i] tracks how many PENDING predecessors task i still has.
+
+  Chosen approach : Adjacency List
+  Alternative     : Adjacency Matrix (int edges[MAX_TASKS][MAX_TASKS])
+
+  Comparison:
+    Property          | Adjacency List           | Adjacency Matrix
+    ------------------+--------------------------+-----------------------------
+    Memory            | O(V + E) — proportional  | O(V^2) — always 50×50 = 2500
+                      | to actual edges          | integers regardless of edges
+    Add edge          | O(1) prepend to list      | O(1) set matrix cell
+    Check edge exists | O(degree(v))             | O(1) direct lookup
+    Iterate neighbors | O(degree(v))             | O(V) — must scan full row
+    Typical edge count| Low (sparse graph)       | Irrelevant — matrix always
+                      |                          | same size
+
+  Why adjacency list was chosen:
+    Dependency graphs are sparse in practice — a user rarely sets more than
+    a handful of dependencies per task. An adjacency matrix would waste
+    50*50 = 2500 cells even if only 5 edges exist. Iterating neighbors
+    (needed in markDone, undoMarkDone, deleteTask, and cycle detection)
+    is faster on a list than scanning a full row of the matrix.
+
+--------------------------------------------------------------------------------
+5.3  FIFO Queue — Linked List (Kahn's BFS Topological Sort)
+--------------------------------------------------------------------------------
+Location  : include/queue.h (Queue, QNode structs), src/queue.c
+Usage     : Enqueues tasks whose in-degree drops to 0 during topological sort.
+            q_enqueue() appends to rear, q_dequeue() removes from front — both O(1).
+
+  Chosen approach : Linked-list FIFO Queue
+  Alternative     : Array-based Circular Queue
+
+  Comparison:
+    Property          | Linked-list Queue        | Circular Array Queue
+    ------------------+--------------------------+-----------------------------
+    Max capacity      | Unbounded (malloc each)  | Fixed at declaration time
+    Enqueue           | O(1) — append to rear    | O(1) — write + advance rear
+    Dequeue           | O(1) — advance front     | O(1) — read + advance front
+    Memory            | malloc per node          | Pre-allocated array block
+    Index arithmetic  | None — pointer follows   | Wrap-around (% TABLE_SIZE)
+                      | linked structure         | required
+
+  Why linked-list queue was chosen:
+    During BFS, the number of tasks enqueued is not known in advance. A
+    linked-list queue grows to exactly the size needed. An array queue
+    requires a fixed capacity and wrap-around index logic that adds complexity
+    without benefit in a codebase that already uses linked structures everywhere.
+
+--------------------------------------------------------------------------------
+5.4  Sorted Linked List — Priority Queue (Ready-Task Ranking)
+--------------------------------------------------------------------------------
+Location  : include/priority_queue.h (PriorityQueue, PQNode structs),
+            src/priority_queue.c
+Usage     : All PENDING tasks with inDegree == 0 are enqueued into a priority
+            queue. pq_enqueue() inserts each node at the correct sorted position
+            (ascending priority value: 1=High, 2=Medium, 3=Low). The dashboard
+            dequeues them in that order to show Zone 1 correctly ranked.
+
+  Chosen approach : Sorted Singly Linked List Priority Queue
+  Alternative     : Binary Min-Heap
+
+  Comparison:
+    Property          | Sorted Linked List       | Binary Min-Heap
+    ------------------+--------------------------+-----------------------------
+    Enqueue (insert)  | O(n) — walk to position  | O(log n) — sift up
+    Dequeue (min)     | O(1) — remove head       | O(log n) — sift down
+    Peek minimum      | O(1) — read head         | O(1) — read root
+    Priority levels   | 3 distinct values        | Arbitrary numeric priority
+    Max n             | 50 tasks                 | Arbitrary
+    Implementation    | ~30 lines                | ~80 lines + index arithmetic
+
+  Why sorted linked list was chosen:
+    With only three priority levels (High/Medium/Low) and at most 50 tasks,
+    O(n) insertion on a list of at most 50 nodes is entirely acceptable —
+    that is at most 50 comparisons per enqueue. A binary heap would provide
+    O(log n) but would require maintaining a backing array, tracking heap
+    size, and implementing sift-up/sift-down — significantly more code for
+    no measurable performance gain at this scale. The sorted list also
+    provides stable ordering: equal-priority tasks stay in insertion order.
+
+--------------------------------------------------------------------------------
+5.5  LIFO Stack — Linked List (Undo History)
+--------------------------------------------------------------------------------
+Location  : include/stack_undo.h (UndoStack, StackNode structs),
+            src/stack_undo.c
+Usage     : Every successful markDone() pushes the completed task's ID.
+            Undo pops the most recent ID and calls undoMarkDone() to revert
+            the task status and re-increment the in-degree of its dependents.
+
+  Chosen approach : Linked-list LIFO Stack
+  Alternative     : Fixed-size Array Stack (int history[MAX_TASKS])
+
+  Comparison:
+    Property          | Linked-list Stack        | Array Stack
+    ------------------+--------------------------+-----------------------------
+    Max depth         | Unbounded (malloc)       | Fixed at MAX_TASKS
+    Push              | O(1) — prepend node      | O(1) — write + increment top
+    Pop               | O(1) — remove head       | O(1) — read + decrement top
+    Memory overhead   | malloc per push          | MAX_TASKS * sizeof(int)
+    Overflow risk     | None                     | Stack overflow if not guarded
+
+  Why linked-list stack was chosen:
+    Consistency with the rest of the codebase — every dynamic collection uses
+    linked nodes. An array stack would also work here, but would require a
+    bounds check on every push. The linked-list approach eliminates that risk
+    and keeps the pattern uniform across all six collection types in the system.
+
+--------------------------------------------------------------------------------
+5.6  In-Memory Array (User Credentials)
+--------------------------------------------------------------------------------
+Location  : include/auth.h (User struct), src/auth.c
+Usage     : User users[MAX_USERS] is loaded from data/users.txt at startup.
+            Registration appends to this array and to the file. Login does a
+            linear search for a matching username+password pair.
+
+  Chosen approach : Static Array of User Structs
+  Alternative     : Linked List of User Nodes
+
+  Comparison:
+    Property          | Static Array             | Linked List of Users
+    ------------------+--------------------------+-----------------------------
+    Access by index   | O(1)                     | O(n) traversal
+    Linear search     | O(n) — same as list      | O(n)
+    Insert at end     | O(1) — write next slot   | O(1) — append node
+    Memory            | MAX_USERS * sizeof(User) | malloc per user on demand
+                      | allocated once           |
+    Simplicity        | High                     | Moderate
+
+  Why array was chosen:
+    The user count is fully known at load time and is capped at 100. An array
+    makes login a simple indexed linear scan with no pointer chasing. Since
+    the array is loaded once into a stack-allocated block in main(), there is
+    no heap fragmentation concern. A linked list would add malloc overhead and
+    pointer traversal for no practical advantage at 100-user scale.
+
+--------------------------------------------------------------------------------
+5.7  Hash Table with Open Chaining (Tag-Based Lookup)
+--------------------------------------------------------------------------------
+Location  : include/hash_table.h (HashNode struct), src/hash_table.c
+Usage     : When a task is created or loaded, insert_tag() maps the task's tag
+            string to its Task pointer using a DJB2 hash into 97 buckets. When
+            the user searches by tag, search_by_tag() hashes the keyword and
+            walks the collision chain at that bucket to display all matches.
+
+  Chosen approach : Hash Table with Open Chaining (97 buckets, DJB2 hash)
+  Alternative     : Linear scan of the full task linked list
+
+  Comparison:
+    Property          | Hash Table (Open Chain)  | Linear Scan
+    ------------------+--------------------------+-----------------------------
+    Search by tag     | O(1) avg, O(n) worst     | O(n) always
+    Insert task       | O(1) avg                 | N/A — not needed
+    Memory            | Extra HashNode per task  | No extra memory
+    Handles collisions| Yes — chaining           | N/A
+    Implementation    | Moderate complexity      | Trivial
+
+  Why hash table was chosen:
+    Tag search is intended to be a fast lookup feature. A linear scan of the
+    task list works but always examines every task regardless of tag. The hash
+    table reduces average lookup to O(1) by mapping tag strings to a bucket.
+    The DJB2 hash function is simple to implement and distributes short strings
+    well. 97 buckets (a prime number) minimises clustering. Open chaining was
+    chosen over open addressing because the task list already provides linked
+    nodes that can double as collision chains.
+
+
+================================================================================
+6. ALGORITHMS IMPLEMENTED
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1  DFS Cycle Detection
+--------------------------------------------------------------------------------
+Function  : detectCycle() in src/task_graph.c
+Trigger   : Called inside addDependency() before an edge is permanently added.
+Purpose   : Guarantee that the dependency graph remains a Directed Acyclic Graph
+            (DAG) at all times, so topological sort always produces a valid result.
+
+How it works:
+  Two boolean arrays — visited[] and inStack[] — track the DFS state of each
+  node. The algorithm starts a DFS from the proposed new destination node (toID).
+  If it ever reaches a node that is currently in the recursion stack (inStack[]
+  is true), a back-edge has been found, meaning a cycle would be created. The
+  edge is then rejected and rolled back (fromID's edge to toID is not saved).
+
+Complexity : O(V + E) where V = tasks, E = dependency edges.
+
+--------------------------------------------------------------------------------
+6.2  Kahn's BFS Topological Sort
+--------------------------------------------------------------------------------
+Function  : topologicalSortDisplay() in src/task_graph.c
+Trigger   : Menu option [8] "View Topological Execution Order."
+Purpose   : Produce one valid ordering in which all PENDING tasks could be
+            completed while respecting all prerequisite constraints.
+
+How it works:
+  1. Copy inDegree values into a local array (leaves the graph unchanged).
+  2. Enqueue all PENDING tasks whose local in-degree is 0.
+  3. Dequeue one task, print it as the next in the execution sequence.
+  4. For each PENDING successor of that task, decrement its local in-degree.
+     If it reaches 0, enqueue it.
+  5. Repeat until the queue is empty.
+  If the number of tasks printed is fewer than the number of PENDING tasks,
+  a cycle exists in the PENDING subgraph (should not occur if cycle detection
+  is working, but is reported defensively).
+
+Complexity : O(V + E).
+
+--------------------------------------------------------------------------------
+6.3  Priority Queue Sorted Insert
+--------------------------------------------------------------------------------
+Function  : pq_enqueue() in src/priority_queue.c
+Trigger   : displayDashboard() enqueues every PENDING ready task before display.
+Purpose   : Keep the priority queue's head always pointing to the highest-priority
+            task (priority value 1 = High, 2 = Medium, 3 = Low).
+
+How it works:
+  Walk the sorted list from the head to find the first existing node whose
+  priority value is strictly greater than the new node's. Insert the new node
+  immediately before that node. If no such node is found, append to the tail.
+  This guarantees the list is always in ascending priority-value order, so
+  dequeuing the head always yields the highest-priority task.
+
+Complexity : O(n) insert, O(1) dequeue.
+
+--------------------------------------------------------------------------------
+6.4  DJB2 Hash Function
+--------------------------------------------------------------------------------
+Function  : hash_function() in src/hash_table.c
+Trigger   : Every insert_tag() and search_by_tag() call.
+Purpose   : Map a tag string to a bucket index in the 97-slot hash table with
+            good distribution and minimal collisions.
+
+How it works:
+  Initialises a hash value to 5381. For each character in the tag string
+  (converted to lowercase for case-insensitivity), the hash is updated as:
+    hash = hash * 33 + character
+  The final bucket index is hash % TABLE_SIZE (97).
+  Collisions are resolved by chaining: multiple HashNode records at the same
+  bucket are linked into a singly linked list.
+
+Complexity : O(k) where k = length of tag string.
+
+
+================================================================================
+7. FILE I/O & PERSISTENCE DESIGN
+================================================================================
+
+All data is stored in the data/ directory, which is created automatically at
+program startup if it does not already exist.
+
+--------------------------------------------------------------------------------
+7.1  User Credentials  (data/users.txt)
+--------------------------------------------------------------------------------
+Format:
+    username1:password1
+    username2:password2
+    ...
+
+  - One record per line, colon-delimited.
+  - Created on first registration; missing file is handled gracefully (no users
+    loaded, no error shown — program starts fresh).
+  - Writes use append mode ("a") so existing records are never overwritten.
+  - Read entirely into memory at startup via fgets() + strchr(':') parsing.
+  - Credentials are stored in plaintext (acceptable for an academic project;
+    a production system would use a hashing algorithm such as bcrypt).
+
+--------------------------------------------------------------------------------
+7.2  Per-User Task File  (data/<username>_tasks.txt)
+--------------------------------------------------------------------------------
+Format:
+    TASK|<id>|<priority>|<status>|<name>|<tag>
+    TASK|<id>|<priority>|<status>|<name>|<tag>
+    ...
+    DEP|<fromID>|<toID>
+    DEP|<fromID>|<toID>
+    ...
+    NEXTID|<nextID>
+
+  - One file per registered user, named after their username.
+  - TASK lines define each task: id (int), priority (1/2/3), status (0=PENDING,
+    1=DONE), name (text), tag (text). The '|' character is reserved as the
+    delimiter and cannot appear in task names (validated on input).
+  - DEP lines define directed edges in the dependency graph.
+  - NEXTID records the auto-increment counter so task IDs continue correctly
+    after a reload.
+  - On every save, the file is fully rewritten ("w" mode) — not appended —
+    so the file always reflects the exact current state.
+
+--------------------------------------------------------------------------------
+7.3  The inDegree Fix-Up Pass (Critical Design Detail)
+--------------------------------------------------------------------------------
+When loadTasksFromFile() processes DEP lines, it rebuilds inDegree by
+incrementing inDegree[toID] for every edge. However, if the source task (fromID)
+is already DONE, that edge should not contribute to the block count, because
+markDone() already decremented inDegree[toID] at the time of completion.
+
+Without the fix-up, a task that was correctly unblocked after its predecessor
+was marked done would wrongly appear blocked again after the next login.
+
+The fix-up pass runs after the entire file is parsed:
+    for every task in the list:
+        if task->status == STATUS_DONE:
+            for every successor in adjList[task->taskID]:
+                if inDegree[successor] > 0: inDegree[successor]--
+
+This restores the correct PENDING-only in-degree invariant before any user
+interaction begins in the new session.
+
+
+================================================================================
+8. KEY DESIGN DECISIONS & TRADE-OFFS
+================================================================================
+
+  Decision 1 — fgets() everywhere, never scanf()
+    scanf() leaves a trailing newline in the input buffer, causing subsequent
+    reads to appear empty. It also has no built-in length limit, risking buffer
+    overflow. fgets() reads at most n-1 bytes and includes the newline in the
+    buffer, which is then stripped with strcspn(). This pattern is applied
+    uniformly to all user input in the project.
+
+  Decision 2 — Edges are never removed on markDone()
+    When a task is marked done, its outgoing adjacency list is left intact.
+    Only inDegree values are decremented. This means undoMarkDone() can restore
+    the graph by re-incrementing inDegree for each node in adjList[taskID]
+    without any need to reconstruct edges from scratch. The trade-off is that
+    adjacency lists for DONE tasks consume memory for the rest of the session,
+    but with a 50-task cap this is negligible.
+
+  Decision 3 — inDegree tracks only PENDING predecessors
+    The inDegree array must always reflect the count of PENDING tasks that must
+    still complete before a task can start. When addDependency() is called with
+    a fromID that is already DONE, it does not increment inDegree[toID] because
+    the prerequisite is already satisfied. This invariant is what makes the
+    "ready to start" check (inDegree == 0 && status == PENDING) reliable.
+
+  Decision 4 — Per-user task files
+    Each user's tasks are stored in a separate file named after their username.
+    This isolates workspaces completely — one user's tasks cannot interfere with
+    another's, and loading on login is a single fopen() call.
+
+  Decision 5 — Undo stack is session-local and not persisted
+    The undo stack is allocated in mainMenu() and freed on logout. It is never
+    written to disk. This simplifies the file format (no stack section needed)
+    and avoids the design question of how many historical actions to persist.
+    The trade-off is that undo history is lost across sessions, which is
+    acceptable for a course project.
+
+  Decision 6 — Plaintext passwords
+    User passwords are stored without hashing in data/users.txt. This is an
+    acknowledged limitation acceptable in an academic context. In a production
+    system, passwords would be hashed with a slow function such as bcrypt or
+    Argon2 before storage.
+
+  Decision 7 — strtol() with endptr validation for menu input
+    Both authMenu() and mainMenu() use strtol() with an endptr check instead
+    of atoi(). atoi() returns 0 for any non-numeric input, which would silently
+    match case 0 (Exit / Logout) — causing Thai characters or symbols to
+    accidentally log the user out. strtol() allows the code to detect conversion
+    failure and show an error message instead.
+
+
+================================================================================
+9. SYSTEM CONSTRAINTS & LIMITS
+================================================================================
+
+  Constant        | Value  | Meaning
+  ----------------+--------+----------------------------------------------------
+  MAX_USERNAME    | 50     | Maximum length of a username (chars)
+  MAX_PASSWORD    | 50     | Maximum length of a password (chars)
+  MAX_USERS       | 100    | Maximum total registered users in users.txt
+  MAX_TASKS       | 50     | Maximum tasks per user (per session workspace)
+  MAX_TASK_NAME   | 100    | Maximum length of a task name (chars)
+  MAX_TAG_NAME    | 30     | Maximum length of a tag string (chars)
+  TABLE_SIZE      | 97     | Number of buckets in the tag hash table (prime)
+  USERS_FILE      | --     | Hardcoded to "data/users.txt"
+
+When limits are hit:
+  - MAX_USERS: Register rejects the new account with "[ERROR] User limit reached."
+  - MAX_TASKS: addTask() returns -1; the menu displays an error message.
+  - MAX_USERNAME / MAX_PASSWORD: fgets() truncates silently; the user sees their
+    input shortened on the next read.
+  - MAX_TASK_NAME: Same as above — fgets() enforces the buffer boundary.
+  - Bare Enter at a menu prompt: the while(1) loop calls continue and redraws
+    the menu without advancing to the switch statement.
+
+
+================================================================================
+10. KNOWN LIMITATIONS
+================================================================================
+
+  1. Single-level undo only
+     The undo stack holds the full session history, but the current menu only
+     pops and applies one action. Multiple sequential undo operations are not
+     exposed in the UI.
+
+  2. No password hashing
+     Credentials are stored as plaintext. Any person with access to data/
+     users.txt can read all usernames and passwords directly.
+
+  3. No concurrent-session safety
+     If the same username were active in two terminal windows simultaneously,
+     the second save would overwrite the first. The file format assumes a
+     single writer per username at any time.
+
+  4. Undo history lost on logout
+     The undo stack lives in memory only. Logging out and back in starts a
+     fresh stack; actions from the previous session cannot be undone.
+
+  5. Case-sensitive usernames
+     "Alice" and "alice" are treated as different usernames. The duplicate check
+     in registerUser() uses strcmp(), not strcasecmp().
+
+  6. No account management
+     Users cannot change their password or delete their account once registered.
+     These operations would require reading, modifying, and rewriting users.txt.
+
+  7. Tag field backward compatibility
+     Task files written before the tag feature was added contain only four
+     fields per TASK line. The loader defaults to "Uncategorized" for the missing
+     tag field, but once the file is resaved the new five-field format is used
+     and the file is no longer readable by older builds.
+
+
+================================================================================
+11. BUILD & RUN INSTRUCTIONS
+================================================================================
+
+Build Command (run from the project root directory):
+
+    gcc -Wall -Wextra -I include -o task_manager \
+        src/main.c src/auth.c src/task_graph.c \
+        src/priority_queue.c src/stack_undo.c src/queue.c src/hash_table.c
+
+  Flags:
+    -Wall -Wextra   Enable all standard and extra compiler warnings.
+    -I include      Tell gcc to search the include/ directory for header files.
+    -o task_manager Name the output binary task_manager (task_manager.exe on Windows).
+
+Run:
+    Windows   : task_manager.exe    (or simply task_manager in the same directory)
+    Linux/Mac : ./task_manager
+
+Data Files Created at Runtime:
+    data/               Created automatically on first launch if absent.
+    data/users.txt      Created on first registration.
+    data/<user>_tasks.txt  Created on first task save for that user.
+
+
+================================================================================
+12. DEVELOPMENT TIMELINE & PHASE BREAKDOWN
+================================================================================
+
+  Phase 1 — Foundation (2026-05-12)
+    Implemented user authentication (register, login, file I/O for users.txt),
+    the main UI framework (clearScreen, printBanner, authMenu, mainMenu stub),
+    and cross-platform screen clearing. Stub header files for all later phases
+    were created with include guards and TODO comments.
+
+  Phase 2 — Task & Dependency Engine (2026-05-12 to 2026-05-14)
+    Implemented the Task singly linked list (addTask, findTaskByID, deleteTask,
+    searchTaskByName), the directed dependency graph using adjacency lists
+    (addDependency, detectCycle via DFS), the FIFO Queue module for BFS, and
+    Kahn's topological sort display. The two-zone dashboard was added with a
+    placeholder sort. Per-user file I/O (saveTasksToFile, loadTasksFromFile)
+    was implemented and integrated.
+
+  Phase 3 — Priority Queue & Mark Done (2026-05-14)
+    Implemented the sorted singly-linked-list priority queue (pq_enqueue,
+    pq_dequeue) and replaced the placeholder sort in the dashboard with proper
+    priority-queue dequeuing. Implemented markDone() with inDegree decrement.
+    Identified and fixed a critical bug: the inDegree fix-up pass was added to
+    loadTasksFromFile() to correct wrongly-blocked tasks after reload.
+
+  Phase 4 — Undo Stack & Full Integration (2026-05-14)
+    Implemented the LIFO undo stack (stack_push, stack_pop, stack_free) and
+    undoMarkDone(). Wired stack_push into case 4 of mainMenu and wired the
+    full undo flow into case 5. Ran a full integration test: register, login,
+    add tasks, set dependencies, mark done, verify dashboard, undo, verify
+    revert, logout and re-login to verify persistence.
+
+  Extra Feature — Hash Table for Tag Search (2026-05-14)
+    Added the hash_table module with a 97-bucket DJB2 hash table using open
+    chaining. Extended the Task struct with a tag field. Updated addTask(),
+    loadTasksFromFile(), and deleteTask() to maintain hash table state.
+    Added menu option [9] for tag-based search.
+
+  Bug Fixes (throughout)
+    - Fixed malloc null-check omissions, build command corrections, and
+      MAX_TAG_NAME constant definition.
+    - Fixed a session isolation bug where one user could access another user's
+      task data.
+    - Fixed invalid-input handling in authMenu() and mainMenu(): replaced
+      atoi() with strtol() + endptr validation so Thai characters and special
+      symbols no longer silently trigger the Exit/Logout case.
+
+
+================================================================================
+13. CONCLUSION
+================================================================================
+
+The Smart Task Management System successfully demonstrates how abstract data
+structures from CPE112 can be combined into a functioning, interactive
+application. Each structure was chosen deliberately for the specific access
+patterns of its feature: linked lists for dynamic task storage, an adjacency
+list graph for sparse dependency tracking, a BFS queue for topological ordering,
+a priority queue for ranked display, and a stack for undo. The hash table adds
+an extra dimension of fast lookup by tag.
+
+Beyond the data structures themselves, the project required non-trivial
+algorithmic thinking: the DFS cycle check enforces the DAG property in real
+time; the inDegree invariant and the fix-up pass after file reload required
+careful reasoning about when edges are semantically "active"; and the decision
+to never remove edges on completion was driven by the need for O(1) undo logic.
+
+The team delivered all four phases plus an extra feature within the project
+timeline, identified and resolved several bugs (including a cross-user data
+isolation issue and a critical inDegree reload bug), and maintained consistent
+coding standards (English-only UI, fgets input, cross-platform guards) throughout.
+The result is a clean, modular, and fully documented codebase that meets all
+requirements of the CPE112 Data Structures project brief.
+
+================================================================================
+                         END OF PROJECT CONCLUSION
+================================================================================
