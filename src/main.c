@@ -102,7 +102,16 @@ int authMenu(User users[], int *userCount, char *loggedInUser) {
         fgets(menuInput, sizeof(menuInput), stdin);
         menuInput[strcspn(menuInput, "\n")] = '\0';
         if (strlen(menuInput) == 0) continue; /* Bare Enter — redraw menu */
-        choice = atoi(menuInput);
+        {
+            char *endptr;
+            choice = (int)strtol(menuInput, &endptr, 10);
+            if (endptr == menuInput || *endptr != '\0') {
+                printf("\n[ERROR] Invalid option. Please enter 0, 1, or 2.\n");
+                printf("Press Enter to continue...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                continue;
+            }
+        }
 
         switch (choice) {
             case 1:
@@ -185,7 +194,16 @@ void mainMenu(const char *username, Task **taskList, TaskGraph *graph) {
         fgets(menuInput, sizeof(menuInput), stdin);
         menuInput[strcspn(menuInput, "\n")] = '\0';
         if (strlen(menuInput) == 0) continue; /* Bare Enter — redraw menu */
-        choice = atoi(menuInput);
+        {
+            char *endptr;
+            choice = (int)strtol(menuInput, &endptr, 10);
+            if (endptr == menuInput || *endptr != '\0') {
+                printf("\n[ERROR] Invalid option. Please enter a number from 0 to 9.\n");
+                printf("Press Enter to continue...");
+                fgets(menuInput, sizeof(menuInput), stdin);
+                continue;
+            }
+        }
 
         switch (choice) {
 
